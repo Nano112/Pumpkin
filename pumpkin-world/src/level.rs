@@ -279,10 +279,17 @@ impl Level {
             .map_or(1, std::num::NonZero::get)
             .saturating_sub(2)
             .max(1);
+        // lantern: every thread is a Web Worker instantiating the whole module —
+        // keep the per-dimension pipeline minimal on wasm.
+        #[cfg(target_family = "wasm")]
+        let threads_per_dimension = 1;
+        #[cfg(not(target_family = "wasm"))]
         let threads_per_dimension = (total_cores / 2).max(1);
+        #[cfg(target_family = "wasm")]
+        let _ = total_cores;
 
         GenerationSchedule::create(
-            4,
+            if cfg!(target_family = "wasm") { 1 } else { 4 },
             threads_per_dimension,
             level_ref.clone(),
             level_channel,

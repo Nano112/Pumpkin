@@ -303,6 +303,8 @@ impl Server {
         let gen_pool = Arc::new(
             rayon::ThreadPoolBuilder::new()
                 .thread_name(|i| format!("Gen-Pool-{i}"))
+                // lantern: workers are expensive on wasm; cap the pool small.
+                .num_threads(if cfg!(target_family = "wasm") { 2 } else { 0 })
                 .build()
                 .expect("Failed to build generation thread pool"),
         );
