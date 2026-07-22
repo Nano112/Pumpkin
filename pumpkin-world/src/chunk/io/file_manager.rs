@@ -99,7 +99,7 @@ impl<S: ChunkSerializer<WriteBackend = PathBuf>> ChunkSerializerLazyLoader<S> {
     async fn read_from_disk(&self) -> Result<S, ChunkReadingError> {
         trace!("Opening file from disk: {}", self.path.display());
 
-        match tokio::fs::read(&self.path).await {
+        match pumpkin_util::compat::fs::read(&self.path).await {
             Ok(bytes) => {
                 let value = S::read(bytes.into())?;
                 trace!("Successfully read file from disk: {}", self.path.display());

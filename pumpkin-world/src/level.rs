@@ -30,7 +30,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread,
 };
-use tokio::time::timeout;
+use pumpkin_util::compat::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 // use tokio::runtime::Handle;

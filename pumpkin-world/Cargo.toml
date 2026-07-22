@@ -15,17 +15,6 @@ futures.workspace = true
 
 bytes.workspace = true
 
-tokio = { workspace = true, features = [
-    "macros",
-    # Maybe remove this in the future
-    "rt-multi-thread",
-    "sync",
-    "io-std",
-    "signal",
-    "fs",
-    "io-util",
-    "time",
-] }
 uuid.workspace = true
 thiserror.workspace = true
 serde.workspace = true
@@ -57,6 +46,24 @@ rand.workspace = true
 rustc-hash.workspace = true
 slotmap.workspace = true
 crossfire.workspace = true
+
+# lantern: tokio feature set differs per target — wasm has no threads/fs/signal.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = [
+    "macros",
+    # Maybe remove this in the future
+    "rt-multi-thread",
+    "sync",
+    "io-std",
+    "signal",
+    "fs",
+    "io-util",
+    "time",
+] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "sync", "io-util"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports", "async_tokio"] }

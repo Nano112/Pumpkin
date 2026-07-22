@@ -393,7 +393,7 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearV2File<S> {
 
     async fn write(&self, path: &PathBuf) -> Result<(), std::io::Error> {
         let temp_path = path.with_extension("tmp");
-        let file = tokio::fs::File::create(&temp_path).await?;
+        let file = pumpkin_util::compat::fs::File::create(&temp_path).await?;
         let mut writer = BufWriter::new(file);
 
         let grid_size = self.grid_size;
@@ -445,7 +445,7 @@ impl<S: SingleChunkDataSerializer> ChunkSerializer for LinearV2File<S> {
         writer.flush().await?;
 
         // Atomic rename so a crash during write cannot produce a torn file.
-        tokio::fs::rename(temp_path, path).await?;
+        pumpkin_util::compat::fs::rename(temp_path, path).await?;
         Ok(())
     }
 

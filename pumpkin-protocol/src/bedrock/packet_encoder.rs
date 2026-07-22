@@ -6,7 +6,9 @@ use std::{
 };
 
 use flate2::{Compression, write::DeflateEncoder};
-use tokio::{io::AsyncWrite, net::UdpSocket};
+use tokio::io::AsyncWrite;
+#[cfg(not(target_family = "wasm"))]
+use tokio::net::UdpSocket;
 
 use crate::{
     Aes128Cfb8Enc, CompressionLevel, CompressionThreshold, StreamEncryptor, bedrock::SubClient,
@@ -175,6 +177,8 @@ impl UDPNetworkEncoder {
         Ok(())
     }
 
+    // lantern: UDP sockets don't exist on wasm; Bedrock transport is native-only.
+    #[cfg(not(target_family = "wasm"))]
     pub async fn write_packet(
         &self,
         packet_data: &[u8],

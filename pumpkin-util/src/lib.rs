@@ -11,6 +11,7 @@ pub use permission::PermissionLvl;
 use crate::{math::vector3::Axis, random::RandomImpl};
 
 pub mod biome;
+pub mod compat;
 pub mod chest_loot_table;
 pub mod difficulty;
 pub mod gamemode;

@@ -55,7 +55,7 @@ where
         pumpkin_nbt::to_bytes_unnamed(&self.data, &mut bytes)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-        tokio::fs::write(backend, bytes).await
+        pumpkin_util::compat::fs::write(backend, bytes).await
     }
 
     fn read(r: Bytes) -> Result<Self, ChunkReadingError> {
@@ -213,7 +213,7 @@ mod tests {
         pump_file.update_chunk(&chunk, &()).await.unwrap();
         pump_file.write(&file_path).await.unwrap();
 
-        let bytes = tokio::fs::read(&file_path).await.unwrap();
+        let bytes = pumpkin_util::compat::fs::read(&file_path).await.unwrap();
         let read_file = PumpFile::<MockChunk>::read(Bytes::from(bytes)).unwrap();
 
         assert_eq!(read_file.data.chunks.len(), 1);

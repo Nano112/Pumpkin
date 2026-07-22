@@ -110,7 +110,8 @@ futures = { version = "0.3", default-features = false, features = ["executor"] }
 rayon = { version = "1.12", default-features = false }
 crossbeam = { version = "0.8", default-features = false, features = ["std"] }
 
-uuid = { version = "1.24", default-features = false, features = ["serde", "v3", "v4", "std"] }
+# lantern: "js" only affects wasm targets (randomness via wasm-bindgen); no-op on native.
+uuid = { version = "1.24", default-features = false, features = ["serde", "v3", "v4", "std", "js"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "std"] }
 serde_repr = { version = "0.1", default-features = false }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }

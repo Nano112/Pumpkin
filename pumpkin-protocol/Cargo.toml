@@ -21,7 +21,7 @@ serde = { workspace = true, features = ["derive"] }
 
 uuid.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["net"] }
+tokio.workspace = true
 bytes.workspace = true
 
 # encryption
@@ -36,6 +36,10 @@ async-compression = { workspace = true, features = ["tokio", "zlib", "deflate"] 
 flate2.workspace = true
 
 bitflags.workspace = true
+
+# lantern: "net" (mio) does not exist on wasm; only the Bedrock UDP path needs it.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+tokio = { workspace = true, features = ["net"] }
 
 [dev-dependencies]
 # Validate correctness

@@ -227,6 +227,8 @@ pub const OIDC_AUDIENCE: &str = "api://auth-minecraft-services/multiplayer";
 pub const OIDC_DISCOVERY_URL: &str =
     "https://client.discovery.minecraft-services.net/api/v1.0/discovery/MinecraftPE/builds/1.0.0.0";
 
+// lantern: needs a native HTTP client; browser builds do auth (if ever) via JS fetch.
+#[cfg(not(target_family = "wasm"))]
 pub fn fetch_oidc_jwks(
     discovery_url: Option<&str>,
     connect_timeout_ms: u32,
