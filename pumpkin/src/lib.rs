@@ -496,52 +496,10 @@ impl PumpkinServer {
                         debug!("Accepted connection from Java Edition: {formatted_address} (id {client_id})");
                         let server_clone = self.server.clone();
 
-                        tasks.spawn(async move {
-                            let mut java_client = JavaClient::new(connection, client_addr, client_id);
-                            java_client.start_outgoing_packet_task();
-                            let login_result = java_client.handle_login_sequence(&server_clone).await;
-
-                            match login_result {
-                                PacketHandlerResult::Stop => {
-                                     java_client.close();
-                                     java_client.await_tasks().await;
-                                },
-                                PacketHandlerResult::ReadyToPlay(profile,config) => {
-                                     if let Some((player, world)) = server_clone
-                                     .add_player(Arc::new(ClientPlatform::Java(java_client)), profile, Some(config))
-                                          .await
-                                {
-                                    // Set the player on the client BEFORE spawning so that chunk
-                                    // sends during spawn_java_player don't get silently dropped.
-                                    if let ClientPlatform::Java(client) = player.client.as_ref() {
-                                        *client.player.lock().await = Some(player.clone());
-                                    }
-                                    world
-                                        .spawn_java_player(&server_clone.basic_config, &player, &server_clone)
-                                        .await;
-                                    if let ClientPlatform::Java(client) = player.client.as_ref() {
-                                        client.progress_player_packets(&player, &server_clone).await;
-
-                                        // Close when done
-                                        client.close();
-                                        client.await_tasks().await;
-                                    }
-                                    player.remove().await;
-                                    server_clone.remove_player(&player).await;
-                                    if let Err(e) = server_clone.player_data_storage
-                                        .handle_player_leave(&player)
-                                        .await {
-                                            error!("Failed to save player data on disconnect: {e}");
-                                        }
-                                    if let Err(e) = server_clone.advancement_manager
-                                        .save_player(&player)
-                                        .await {
-                                            error!("Failed to save player advancement on disconnect: {e}");
-                                        }
-                                    }
-                                },
-                            }
-                        });
+                        tasks.spawn(run_java_client(
+                            JavaClient::new(connection, client_addr, client_id),
+                            server_clone,
+                        ));
                     }
                     Err(e) => {
                         error!("Failed to accept Java client connection: {e}");
@@ -654,6 +612,57 @@ impl PumpkinServer {
         true
     }
 }
+
+
+/// Drives one Java Edition client connection through its full lifecycle:
+/// login, play, disconnect, persistence. Shared by the native TCP accept loop
+/// and lantern's virtual (in-memory duplex) transport on wasm.
+pub async fn run_java_client(java_client: JavaClient, server_clone: Arc<Server>) {
+    let mut java_client = java_client;
+                            java_client.start_outgoing_packet_task();
+                            let login_result = java_client.handle_login_sequence(&server_clone).await;
+
+                            match login_result {
+                                PacketHandlerResult::Stop => {
+                                     java_client.close();
+                                     java_client.await_tasks().await;
+                                },
+                                PacketHandlerResult::ReadyToPlay(profile,config) => {
+                                     if let Some((player, world)) = server_clone
+                                     .add_player(Arc::new(ClientPlatform::Java(java_client)), profile, Some(config))
+                                          .await
+                                {
+                                    // Set the player on the client BEFORE spawning so that chunk
+                                    // sends during spawn_java_player don't get silently dropped.
+                                    if let ClientPlatform::Java(client) = player.client.as_ref() {
+                                        *client.player.lock().await = Some(player.clone());
+                                    }
+                                    world
+                                        .spawn_java_player(&server_clone.basic_config, &player, &server_clone)
+                                        .await;
+                                    if let ClientPlatform::Java(client) = player.client.as_ref() {
+                                        client.progress_player_packets(&player, &server_clone).await;
+
+                                        // Close when done
+                                        client.close();
+                                        client.await_tasks().await;
+                                    }
+                                    player.remove().await;
+                                    server_clone.remove_player(&player).await;
+                                    if let Err(e) = server_clone.player_data_storage
+                                        .handle_player_leave(&player)
+                                        .await {
+                                            error!("Failed to save player data on disconnect: {e}");
+                                        }
+                                    if let Err(e) = server_clone.advancement_manager
+                                        .save_player(&player)
+                                        .await {
+                                            error!("Failed to save player advancement on disconnect: {e}");
+                                        }
+                                    }
+                                },
+                            }
+                        }
 
 fn setup_stdin_console(server: Arc<Server>) {
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
