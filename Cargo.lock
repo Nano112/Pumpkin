@@ -2843,6 +2843,7 @@ dependencies = [
  "tokio",
  "ureq",
  "uuid",
+ "wasi",
 ]
 
 [[package]]

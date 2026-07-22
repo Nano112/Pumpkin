@@ -52,6 +52,30 @@ const MOJANG_SERVICES_URL: &str = "https://api.minecraftservices.com/";
 const MOJANG_PROFILE_BY_NAME_URL: &str =
     "https://api.mojang.com/users/profiles/minecraft/{username}";
 
+/// Per-target blocking GET returning (status, body). Native uses ureq; wasm
+/// goes through the host page's http.sock bridge (lantern).
+#[cfg(not(target_family = "wasm"))]
+fn http_get(url: &str) -> Result<(u16, Vec<u8>), AuthError> {
+    let mut response = ureq::get(url).call().map_err(|_| AuthError::FailedResponse)?;
+    let status = response.status().as_u16();
+    let body = response
+        .body_mut()
+        .read_to_vec()
+        .map_err(|_| AuthError::FailedParse)?;
+    Ok((status, body))
+}
+
+#[cfg(target_family = "wasm")]
+fn http_get(url: &str) -> Result<(u16, Vec<u8>), AuthError> {
+    let resp = pumpkin_util::compat::http::get(url).map_err(|_| AuthError::FailedResponse)?;
+    Ok((resp.status, resp.body))
+}
+
+fn status_code(raw: u16) -> StatusCode {
+    StatusCode::from_u16(raw).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+
 /// Sends a GET request to Mojang's authentication servers to verify a client's Minecraft account.
 ///
 /// **Purpose:**
@@ -65,18 +89,6 @@ const MOJANG_PROFILE_BY_NAME_URL: &str =
 /// 3. Now our server will send a Request to the Session servers and check if the Player has joined the Session Server .
 ///
 /// See <https://pumpkinmc.org/developer/networking/authentication>
-// lantern: online-mode auth needs blocking HTTP; run offline-mode in browsers.
-#[cfg(target_family = "wasm")]
-pub fn authenticate(
-    _username: &str,
-    _server_hash: &str,
-    _ip: &IpAddr,
-    _auth_config: &AuthenticationConfig,
-) -> Result<GameProfile, AuthError> {
-    Err(AuthError::FailedResponse)
-}
-
-#[cfg(not(target_family = "wasm"))]
 pub fn authenticate(
     username: &str,
     server_hash: &str,
@@ -104,18 +116,13 @@ pub fn authenticate(
             .replace("{server_hash}", server_hash)
     };
 
-    let mut response = ureq::get(address)
-        .call()
-        .map_err(|_| AuthError::FailedResponse)?;
-    match response.status() {
-        StatusCode::OK => {}
-        StatusCode::NO_CONTENT => Err(AuthError::UnverifiedUsername)?,
-        other => Err(AuthError::UnknownStatusCode(other))?,
+    let (status, body) = http_get(&address)?;
+    match status {
+        200 => {}
+        204 => Err(AuthError::UnverifiedUsername)?,
+        other => Err(AuthError::UnknownStatusCode(status_code(other)))?,
     }
-    let profile: GameProfile = response
-        .body_mut()
-        .read_json()
-        .map_err(|_| AuthError::FailedParse)?;
+    let profile: GameProfile = serde_json::from_slice(&body).map_err(|_| AuthError::FailedParse)?;
     Ok(profile)
 }
 
@@ -156,14 +163,6 @@ pub fn is_texture_url_valid(url: &Uri, config: &TextureConfig) -> Result<(), Tex
     Ok(())
 }
 
-#[cfg(target_family = "wasm")]
-pub fn fetch_mojang_public_keys(
-    _auth_config: &AuthenticationConfig,
-) -> Result<Vec<RsaPublicKey>, AuthError> {
-    Err(AuthError::FailedResponse)
-}
-
-#[cfg(not(target_family = "wasm"))]
 pub fn fetch_mojang_public_keys(
     auth_config: &AuthenticationConfig,
 ) -> Result<Vec<RsaPublicKey>, AuthError> {
@@ -172,22 +171,17 @@ pub fn fetch_mojang_public_keys(
         .as_deref()
         .unwrap_or(MOJANG_SERVICES_URL);
 
-    let url = format!("{services_url}/publickeys");
+    let url = format!("{}/publickeys", services_url.trim_end_matches('/'));
 
-    let mut response = ureq::get(url)
-        .call()
-        .map_err(|_| AuthError::FailedResponse)?;
-
-    match response.status() {
-        StatusCode::OK => {}
-        StatusCode::NO_CONTENT => Err(AuthError::FailedResponse)?,
-        other => Err(AuthError::UnknownStatusCode(other))?,
+    let (status, body) = http_get(&url)?;
+    match status {
+        200 => {}
+        204 => Err(AuthError::FailedResponse)?,
+        other => Err(AuthError::UnknownStatusCode(status_code(other)))?,
     }
 
-    let public_keys: MojangPublicKeys = response
-        .body_mut()
-        .read_json()
-        .map_err(|_| AuthError::FailedParse)?;
+    let public_keys: MojangPublicKeys =
+        serde_json::from_slice(&body).map_err(|_| AuthError::FailedParse)?;
 
     let as_rsa_keys = public_keys
         .player_certificate_keys
@@ -209,35 +203,21 @@ struct MojangProfileByNameResponse {
     name: String,
 }
 
-#[cfg(target_family = "wasm")]
-pub fn lookup_profile_by_name(
-    _name: &str,
-    _auth_config: &AuthenticationConfig,
-) -> Result<Option<(Uuid, String)>, AuthError> {
-    Err(AuthError::FailedResponse)
-}
-
-#[cfg(not(target_family = "wasm"))]
 pub fn lookup_profile_by_name(
     name: &str,
     _auth_config: &AuthenticationConfig,
 ) -> Result<Option<(Uuid, String)>, AuthError> {
     let url = MOJANG_PROFILE_BY_NAME_URL.replace("{username}", name);
 
-    let mut response = ureq::get(url)
-        .call()
-        .map_err(|_| AuthError::FailedResponse)?;
-
-    match response.status() {
-        StatusCode::OK => {}
-        StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => return Ok(None),
-        other => Err(AuthError::UnknownStatusCode(other))?,
+    let (status, body) = http_get(&url)?;
+    match status {
+        200 => {}
+        204 | 404 => return Ok(None),
+        other => Err(AuthError::UnknownStatusCode(status_code(other)))?,
     }
 
-    let profile: MojangProfileByNameResponse = response
-        .body_mut()
-        .read_json()
-        .map_err(|_| AuthError::FailedParse)?;
+    let profile: MojangProfileByNameResponse =
+        serde_json::from_slice(&body).map_err(|_| AuthError::FailedParse)?;
 
     let parsed_uuid = Uuid::parse_str(&profile.id).map_err(|_| AuthError::FailedParse)?;
     Ok(Some((parsed_uuid, profile.name)))

@@ -38,6 +38,10 @@ ureq.workspace = true
 # lantern: compat::{fs,time} re-export tokio's real implementations on native.
 tokio = { workspace = true, features = ["sync", "fs", "time", "io-util"] }
 
+[target.'cfg(target_family = "wasm")'.dependencies]
+# lantern: raw fd access for the compat::http bridge
+wasi = "0.11"
+
 [features]
 default = []
 codegen = ["dep:syn", "dep:quote", "dep:proc-macro2"]
