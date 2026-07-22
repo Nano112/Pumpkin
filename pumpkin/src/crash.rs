@@ -13,6 +13,7 @@ use pumpkin_util::text::{
 };
 use pumpkin_world::CURRENT_MC_VERSION;
 use rustc_hash::FxHashMap;
+#[cfg(not(target_family = "wasm"))]
 use sysinfo::{Cpu, System};
 use time::OffsetDateTime;
 use tracing::error;
@@ -200,12 +201,17 @@ impl CrashReport {
             Self::get_pumpkin_version()
         );
         writeln_output!(&mut output, "Minecraft Version: {}", CURRENT_MC_VERSION);
+        #[cfg(not(target_family = "wasm"))]
         writeln_output!(
             &mut output,
             "Server compiled with Rust {}",
             rustc_version_runtime::version()
         );
 
+        #[cfg(target_family = "wasm")]
+        writeln_output!(&mut output, "Platform: WebAssembly (lantern)");
+
+        #[cfg(not(target_family = "wasm"))]
         if sysinfo::IS_SUPPORTED_SYSTEM {
             writeln_output!(&mut output, "\n--- System Details ---");
 
@@ -243,6 +249,7 @@ impl CrashReport {
         output
     }
 
+    #[cfg(not(target_family = "wasm"))]
     fn write_cpus(output: &mut String, sys: &System) {
         writeln_output!(output);
         let cpus = sys.cpus();

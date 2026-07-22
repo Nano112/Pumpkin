@@ -4,7 +4,10 @@ use pumpkin_protocol::bedrock::{
     client::raknet::unconnected_pong::{CUnconnectedPong, ServerInfo},
     server::raknet::unconnected_ping::SUnconnectedPing,
 };
+#[cfg(not(target_family = "wasm"))]
 use tokio::net::UdpSocket;
+#[cfg(target_family = "wasm")]
+use crate::net::wasm_net::UdpSocket;
 
 use crate::{net::bedrock::BedrockClient, server::Server};
 use pumpkin_world::{CURRENT_BEDROCK_MC_PROTOCOL, CURRENT_BEDROCK_MC_VERSION};

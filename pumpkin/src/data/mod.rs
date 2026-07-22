@@ -43,7 +43,7 @@ pub trait LoadJSONConfiguration {
     where
         Self: Sized + Default + Serialize + for<'de> Deserialize<'de>,
     {
-        let exe_dir = env::current_dir().expect("Failed to get current directory");
+        let exe_dir = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let data_dir = exe_dir.join(DATA_FOLDER);
         if !data_dir.exists() {
             debug!("creating new data root folder");
@@ -92,7 +92,7 @@ pub trait SaveJSONConfiguration: LoadJSONConfiguration {
     where
         Self: Sized + Default + Serialize + for<'de> Deserialize<'de>,
     {
-        let exe_dir = env::current_dir().expect("Failed to get current directory");
+        let exe_dir = env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         let data_dir = exe_dir.join(DATA_FOLDER);
         if !data_dir.exists() {
             debug!("creating new data root folder");

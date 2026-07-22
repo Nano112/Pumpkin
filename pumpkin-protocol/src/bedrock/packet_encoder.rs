@@ -10,6 +10,35 @@ use tokio::io::AsyncWrite;
 #[cfg(not(target_family = "wasm"))]
 use tokio::net::UdpSocket;
 
+/// lantern: inert UDP stand-in for wasm — no OS sockets in the browser; Bedrock
+/// networking is disabled at runtime, this only satisfies the type system.
+#[cfg(target_family = "wasm")]
+#[derive(Debug)]
+pub struct UdpSocket;
+
+#[cfg(target_family = "wasm")]
+impl UdpSocket {
+    fn unsupported() -> std::io::Error {
+        std::io::Error::new(std::io::ErrorKind::Unsupported, "no OS sockets on wasm")
+    }
+
+    pub async fn bind(_addr: std::net::SocketAddr) -> std::io::Result<Self> {
+        Err(Self::unsupported())
+    }
+
+    pub async fn send_to(&self, _buf: &[u8], _target: std::net::SocketAddr) -> std::io::Result<usize> {
+        Err(Self::unsupported())
+    }
+
+    pub async fn recv_from(&self, _buf: &mut [u8]) -> std::io::Result<(usize, std::net::SocketAddr)> {
+        Err(Self::unsupported())
+    }
+
+    pub fn local_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        Err(Self::unsupported())
+    }
+}
+
 use crate::{
     Aes128Cfb8Enc, CompressionLevel, CompressionThreshold, StreamEncryptor, bedrock::SubClient,
     codec::var_uint::VarUInt, ser::NetworkWriteExt,
@@ -177,8 +206,6 @@ impl UDPNetworkEncoder {
         Ok(())
     }
 
-    // lantern: UDP sockets don't exist on wasm; Bedrock transport is native-only.
-    #[cfg(not(target_family = "wasm"))]
     pub async fn write_packet(
         &self,
         packet_data: &[u8],

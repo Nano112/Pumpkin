@@ -8,7 +8,10 @@ use pumpkin_protocol::bedrock::{
     },
     server::raknet::open_connection::{SOpenConnectionRequest1, SOpenConnectionRequest2},
 };
+#[cfg(not(target_family = "wasm"))]
 use tokio::net::UdpSocket;
+#[cfg(target_family = "wasm")]
+use crate::net::wasm_net::UdpSocket;
 
 use crate::{net::bedrock::BedrockClient, server::Server};
 

@@ -7,7 +7,10 @@ use rsa::RsaPublicKey;
 use rsa::pkcs8::DecodePublicKey;
 use serde::Deserialize;
 use thiserror::Error;
+#[cfg(not(target_family = "wasm"))]
 use ureq::http::{StatusCode, Uri};
+#[cfg(target_family = "wasm")]
+use http::{StatusCode, Uri};
 use uuid::Uuid;
 
 use super::GameProfile;
@@ -62,6 +65,18 @@ const MOJANG_PROFILE_BY_NAME_URL: &str =
 /// 3. Now our server will send a Request to the Session servers and check if the Player has joined the Session Server .
 ///
 /// See <https://pumpkinmc.org/developer/networking/authentication>
+// lantern: online-mode auth needs blocking HTTP; run offline-mode in browsers.
+#[cfg(target_family = "wasm")]
+pub fn authenticate(
+    _username: &str,
+    _server_hash: &str,
+    _ip: &IpAddr,
+    _auth_config: &AuthenticationConfig,
+) -> Result<GameProfile, AuthError> {
+    Err(AuthError::FailedResponse)
+}
+
+#[cfg(not(target_family = "wasm"))]
 pub fn authenticate(
     username: &str,
     server_hash: &str,
@@ -141,6 +156,14 @@ pub fn is_texture_url_valid(url: &Uri, config: &TextureConfig) -> Result<(), Tex
     Ok(())
 }
 
+#[cfg(target_family = "wasm")]
+pub fn fetch_mojang_public_keys(
+    _auth_config: &AuthenticationConfig,
+) -> Result<Vec<RsaPublicKey>, AuthError> {
+    Err(AuthError::FailedResponse)
+}
+
+#[cfg(not(target_family = "wasm"))]
 pub fn fetch_mojang_public_keys(
     auth_config: &AuthenticationConfig,
 ) -> Result<Vec<RsaPublicKey>, AuthError> {
@@ -186,6 +209,15 @@ struct MojangProfileByNameResponse {
     name: String,
 }
 
+#[cfg(target_family = "wasm")]
+pub fn lookup_profile_by_name(
+    _name: &str,
+    _auth_config: &AuthenticationConfig,
+) -> Result<Option<(Uuid, String)>, AuthError> {
+    Err(AuthError::FailedResponse)
+}
+
+#[cfg(not(target_family = "wasm"))]
 pub fn lookup_profile_by_name(
     name: &str,
     _auth_config: &AuthenticationConfig,

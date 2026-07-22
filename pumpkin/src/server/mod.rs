@@ -55,6 +55,7 @@ use tokio_util::task::TaskTracker;
 mod connection_cache;
 mod key_store;
 pub mod recipe;
+#[cfg(not(target_family = "wasm"))]
 pub mod scheduler;
 pub mod seasonal_events;
 pub mod tick_rate_manager;
@@ -66,6 +67,7 @@ use crate::command::args::entities::{
     EntityFilter, EntityFilterSort, EntitySelectorType, TargetSelector, ValueCondition,
 };
 use crate::data::advancement_data::AdvancementManager;
+#[cfg(not(target_family = "wasm"))]
 use crate::server::scheduler::TaskScheduler;
 
 /// Represents a Minecraft server instance.
@@ -136,6 +138,7 @@ pub struct Server {
     /// Player idle timeout in minutes (0 = disabled)
     pub player_idle_timeout: AtomicI32,
     /// Manages scheduled tasks (e.g. from plugins)
+    #[cfg(not(target_family = "wasm"))]
     pub task_scheduler: Arc<TaskScheduler>,
     tasks: TaskTracker,
 
@@ -287,6 +290,7 @@ impl Server {
             aggregated_tick_times_nanos: AtomicI64::new(0),
             tick_count: AtomicI32::new(0),
             tasks: TaskTracker::new(),
+            #[cfg(not(target_family = "wasm"))]
             task_scheduler: Arc::new(TaskScheduler::new()),
             server_guid: rand::random(),
             player_idle_timeout: AtomicI32::new(0),
@@ -355,6 +359,8 @@ impl Server {
 
         info!("All worlds loaded successfully.");
 
+        // lantern: needs block_in_place + blocking HTTP; Bedrock stays off on wasm.
+        #[cfg(not(target_family = "wasm"))]
         if server.advanced_config.networking.bedrock.online_mode {
             let server_clone = server.clone();
             tokio::spawn(async move {
@@ -909,6 +915,7 @@ impl Server {
     }
     /// Ticks the game logic for all worlds. This is the part that is affected by `/tick freeze`.
     pub async fn tick_worlds(self: &Arc<Self>) {
+        #[cfg(not(target_family = "wasm"))]
         self.task_scheduler.tick(self).await;
 
         let mut set = JoinSet::new();

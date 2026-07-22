@@ -2652,6 +2652,7 @@ dependencies = [
  "flate2",
  "futures",
  "hmac",
+ "http",
  "hyper",
  "image",
  "indexmap",

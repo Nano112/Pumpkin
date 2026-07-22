@@ -1,5 +1,8 @@
 use futures::future::join_all;
-use loader::{LoaderError, PluginLoader, native::NativePluginLoader};
+use loader::{LoaderError, PluginLoader};
+#[cfg(not(target_family = "wasm"))]
+use loader::native::NativePluginLoader;
+#[cfg(not(target_family = "wasm"))]
 use notify::{EventKind, RecursiveMode, Watcher, event::ModifyKind};
 use std::{
     any::Any,
@@ -25,7 +28,9 @@ pub mod loader;
 /// host features.
 pub mod permissions;
 
-use crate::{LOGGER_IMPL, plugin::loader::wasm::WasmPluginLoader, server::Server};
+use crate::{LOGGER_IMPL, server::Server};
+#[cfg(not(target_family = "wasm"))]
+use crate::plugin::loader::wasm::WasmPluginLoader;
 pub use api::*;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -227,10 +232,14 @@ impl Default for PluginManager {
     fn default() -> Self {
         Self {
             plugins: RwLock::new(Vec::new()),
+            #[cfg(not(target_family = "wasm"))]
             loaders: RwLock::new(vec![
                 Arc::new(NativePluginLoader),
                 Arc::new(WasmPluginLoader),
             ]),
+            // lantern: no in-wasm plugin loaders yet (future: JS-bridged loader).
+            #[cfg(target_family = "wasm")]
+            loaders: RwLock::new(Vec::new()),
             server: RwLock::new(None),
             handlers: Arc::new(RwLock::new(HashMap::new())),
             unloaded_files: RwLock::new(HashSet::new()),
@@ -280,6 +289,13 @@ impl PluginManager {
     }
 
     /// Start watching the plugins directory for changes
+    #[cfg(target_family = "wasm")]
+    pub async fn start_watcher(&self) -> Result<(), ManagerError> {
+        Ok(()) // lantern: no fs watching on wasm
+    }
+
+    /// Start watching the plugins directory for changes
+    #[cfg(not(target_family = "wasm"))]
     pub async fn start_watcher(&self) -> Result<(), ManagerError> {
         if self.hot_reload_task.read().await.is_some() {
             return Ok(());
@@ -468,6 +484,15 @@ impl PluginManager {
     }
 
     /// Ask the server owner if they allow the permissions requested by a plugin
+    #[cfg(target_family = "wasm")]
+    fn ask_permission_confirmation(metadata: &PluginMetadata) -> (bool, std::time::Duration) {
+        // lantern: no interactive terminal on wasm; nothing loads plugins there yet.
+        let _ = metadata;
+        (false, std::time::Duration::ZERO)
+    }
+
+    /// Ask the server owner if they allow the permissions requested by a plugin
+    #[cfg(not(target_family = "wasm"))]
     #[expect(clippy::print_stdout)]
     fn ask_permission_confirmation(metadata: &PluginMetadata) -> (bool, std::time::Duration) {
         use colored::Colorize;

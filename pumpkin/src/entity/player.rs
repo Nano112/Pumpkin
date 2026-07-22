@@ -534,6 +534,14 @@ struct SkinTexture {
 }
 
 impl Player {
+    /// lantern: needs blocking HTTP; browser builds skip skin fetching for now.
+    #[cfg(target_family = "wasm")]
+    #[must_use]
+    pub fn fetch_skin(_properties: &[Property]) -> Option<pumpkin_protocol::bedrock::client::Skin> {
+        None
+    }
+
+    #[cfg(not(target_family = "wasm"))]
     #[must_use]
     pub fn fetch_skin(properties: &[Property]) -> Option<pumpkin_protocol::bedrock::client::Skin> {
         let textures_prop = properties.iter().find(|p| &*p.name == "textures")?;

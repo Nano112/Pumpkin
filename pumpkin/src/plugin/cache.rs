@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
-use tokio::fs;
+use pumpkin_util::compat::fs;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PermissionCacheEntry {

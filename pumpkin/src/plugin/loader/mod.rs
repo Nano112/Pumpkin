@@ -1,8 +1,14 @@
-use crate::plugin::{PluginMetadata, api::Plugin, loader::wasm::wasm_host::PluginInitError};
+use crate::plugin::{PluginMetadata, api::Plugin};
+#[cfg(not(target_family = "wasm"))]
+use crate::plugin::loader::wasm::wasm_host::PluginInitError;
 use std::{any::Any, path::Path, pin::Pin};
 use thiserror::Error;
 
+// lantern: concrete loaders need libloading/wasmtime — hosts running inside wasm
+// can't dlopen or embed wasmtime. The PluginLoader trait itself stays portable.
+#[cfg(not(target_family = "wasm"))]
 pub mod native;
+#[cfg(not(target_family = "wasm"))]
 pub mod wasm;
 
 pub type PluginLoadFuture<'a> = Pin<
@@ -68,5 +74,6 @@ pub enum LoaderError {
     },
 
     #[error("Wasm plugin initialization error: {0}")]
+    #[cfg(not(target_family = "wasm"))]
     WasmInitializationError(#[from] PluginInitError),
 }

@@ -26,12 +26,20 @@ use tokio::task::JoinHandle;
 
 use thiserror::Error;
 use uuid::Uuid;
+// lantern: on wasm there are no OS sockets. `wasm_net::UdpSocket` is an inert
+// stand-in so Bedrock code compiles; Bedrock networking stays disabled at runtime.
+#[cfg(target_family = "wasm")]
+pub mod wasm_net;
+
 pub mod authentication;
 pub mod bedrock;
 pub mod java;
+#[cfg(not(target_family = "wasm"))]
 pub mod lan_broadcast;
 mod proxy;
+#[cfg(not(target_family = "wasm"))]
 pub mod query;
+#[cfg(not(target_family = "wasm"))]
 pub mod rcon;
 
 #[derive(Deserialize, Debug)]

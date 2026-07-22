@@ -34,6 +34,11 @@ pub async fn read(path: impl AsRef<Path>) -> io::Result<Vec<u8>> {
     store().get(path).cloned().ok_or_else(|| not_found(path))
 }
 
+pub async fn read_to_string(path: impl AsRef<Path>) -> io::Result<String> {
+    let bytes = read(path).await?;
+    String::from_utf8(bytes).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+}
+
 pub async fn write(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> io::Result<()> {
     store().insert(path.as_ref().to_path_buf(), contents.as_ref().to_vec());
     Ok(())

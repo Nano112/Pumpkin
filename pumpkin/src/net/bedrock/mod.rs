@@ -71,8 +71,11 @@ use pumpkin_protocol::{
     serial::PacketRead,
 };
 use std::net::SocketAddr;
+#[cfg(not(target_family = "wasm"))]
+use tokio::net::UdpSocket;
+#[cfg(target_family = "wasm")]
+use crate::net::wasm_net::UdpSocket;
 use tokio::{
-    net::UdpSocket,
     sync::mpsc::{Receiver, Sender},
     sync::{Mutex, RwLock, oneshot},
     task::JoinHandle,

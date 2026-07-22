@@ -3,10 +3,13 @@
 
 use crate::crash::CrashReport;
 use crate::data::VanillaData;
-use crate::logging::{GzipRollingLogger, PumpkinCommandCompleter, ReadlineLogWrapper};
+use crate::logging::{ConsoleEditor, GzipRollingLogger, ReadlineLogWrapper};
+#[cfg(not(target_family = "wasm"))]
+use crate::logging::PumpkinCommandCompleter;
 use crate::net::bedrock::BedrockClient;
 use crate::net::java::JavaClient;
 use crate::net::{ClientPlatform, DisconnectReason, PacketHandlerResult};
+#[cfg(not(target_family = "wasm"))]
 use crate::net::{lan_broadcast::LANBroadcast, query, rcon::RCONServer};
 use crate::server::{Server, ticker::Ticker};
 use plugin::server::server_command::ServerCommandEvent;
@@ -15,9 +18,8 @@ use pumpkin_config::{AdvancedConfiguration, BasicConfiguration};
 use pumpkin_macros::send_cancellable;
 use pumpkin_util::text::TextComponent;
 use pumpkin_util::text::color::{Color, NamedColor};
-use rustyline::Editor;
-use rustyline::history::FileHistory;
-use rustyline::{Config, error::ReadlineError};
+#[cfg(not(target_family = "wasm"))]
+use rustyline::{Config, Editor, error::ReadlineError};
 use std::collections::HashMap;
 use std::io::{Cursor, ErrorKind, IsTerminal, stdin};
 use std::process::exit;
@@ -26,6 +28,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use std::{net::SocketAddr, sync::LazyLock};
+#[cfg(not(target_family = "wasm"))]
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::select;
 use tokio::sync::Mutex;
@@ -94,9 +97,17 @@ pub fn init_logger(advanced_config: &AdvancedConfiguration) {
             )
         };
 
+        // lantern: no terminal editor on wasm — always the simple logger there.
+        #[cfg(target_family = "wasm")]
         let (logger, rl): (
             Box<dyn std::io::Write + Send + 'static>,
-            Option<Editor<PumpkinCommandCompleter, FileHistory>>,
+            Option<ConsoleEditor>,
+        ) = (Box::new(std::io::stdout()), None);
+
+        #[cfg(not(target_family = "wasm"))]
+        let (logger, rl): (
+            Box<dyn std::io::Write + Send + 'static>,
+            Option<ConsoleEditor>,
         ) = if advanced_config.commands.use_tty && stdin().is_terminal() {
             let rl_config = Config::builder()
                 .auto_add_history(true)
@@ -191,6 +202,7 @@ pub fn stop_or_exit_server() {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn resolve_some<T: Future, D, F: FnOnce(D) -> T>(
     opt: Option<D>,
     func: F,
@@ -204,7 +216,9 @@ fn resolve_some<T: Future, D, F: FnOnce(D) -> T>(
 
 pub struct PumpkinServer {
     pub server: Arc<Server>,
+    #[cfg(not(target_family = "wasm"))]
     pub tcp_listener: Option<TcpListener>,
+    #[cfg(not(target_family = "wasm"))]
     pub udp_socket: Option<Arc<UdpSocket>>,
 }
 
@@ -219,8 +233,10 @@ impl PumpkinServer {
     ) -> Self {
         let server = Server::new(basic_config, advanced_config, vanilla_data).await;
 
+        #[cfg(not(target_family = "wasm"))]
         let rcon = server.advanced_config.networking.rcon.clone();
 
+        #[cfg(not(target_family = "wasm"))]
         if rcon.enabled {
             warn!(
                 "RCON is enabled, but it's highly insecure as it transmits passwords and commands in plain text. This makes it vulnerable to interception and exploitation by anyone on the network"
@@ -231,6 +247,7 @@ impl PumpkinServer {
             });
         }
 
+        #[cfg(not(target_family = "wasm"))]
         let tcp_listener = if server.advanced_config.networking.java.enabled {
             let address = server.advanced_config.networking.java.address;
             // Setup the TCP server socket.
@@ -293,6 +310,7 @@ impl PumpkinServer {
             });
         };
 
+        #[cfg(not(target_family = "wasm"))]
         let udp_socket = if server.advanced_config.networking.bedrock.enabled {
             Some(Arc::new(
                 UdpSocket::bind(server.advanced_config.networking.bedrock.address)
@@ -305,7 +323,9 @@ impl PumpkinServer {
 
         Self {
             server,
+            #[cfg(not(target_family = "wasm"))]
             tcp_listener,
+            #[cfg(not(target_family = "wasm"))]
             udp_socket,
         }
     }
@@ -341,7 +361,10 @@ impl PumpkinServer {
             && let Some((wrapper, _, _)) = LOGGER_IMPL.wait()
         {
             if let Some(rl) = wrapper.take_readline() {
+                #[cfg(not(target_family = "wasm"))]
                 setup_console(rl, self.server.clone());
+                #[cfg(target_family = "wasm")]
+                match rl {} // ConsoleEditor is Infallible on wasm
             } else {
                 if self.server.advanced_config.commands.use_tty {
                     warn!(
@@ -354,7 +377,7 @@ impl PumpkinServer {
 
         let tasks = Arc::new(TaskTracker::new());
         let mut master_client_id: u64 = 0;
-        let bedrock_clients = Arc::new(Mutex::new(HashMap::new()));
+        let bedrock_clients = Arc::new(Mutex::new(HashMap::<SocketAddr, Arc<BedrockClient>>::new()));
 
         let _ = self
             .server
@@ -362,6 +385,7 @@ impl PumpkinServer {
             .fire(ServerLoadEvent::new(LoadType::Startup))
             .await;
 
+        #[cfg(not(target_family = "wasm"))]
         while !SHOULD_STOP.load(Ordering::Relaxed) {
             if !self
                 .unified_listener_task(&mut master_client_id, &tasks, &bedrock_clients)
@@ -369,6 +393,14 @@ impl PumpkinServer {
             {
                 break;
             }
+        }
+
+        // lantern: no OS listener on wasm — clients arrive over virtual duplex
+        // streams injected by the host page; just park until stop is requested.
+        #[cfg(target_family = "wasm")]
+        {
+            let _ = (&mut master_client_id, &bedrock_clients);
+            STOP_INTERRUPT.cancelled().await;
         }
 
         SERVER_IS_STOPPING.store(true, Ordering::Release);
@@ -434,6 +466,7 @@ impl PumpkinServer {
         }
     }
 
+    #[cfg(not(target_family = "wasm"))]
     #[allow(clippy::too_many_lines)]
     pub async fn unified_listener_task(
         &self,
@@ -631,6 +664,14 @@ fn setup_stdin_console(server: Arc<Server>) {
             if let Ok(size) = stdin().read_line(&mut line) {
                 // if no bytes were read, we may have hit EOF
                 if size == 0 {
+                    // lantern: browser stdin is a polled mailbox, not a TTY —
+                    // empty reads mean "no input yet", never EOF.
+                    #[cfg(target_family = "wasm")]
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        continue;
+                    }
+                    #[cfg(not(target_family = "wasm"))]
                     break;
                 }
             } else {
@@ -661,7 +702,8 @@ fn setup_stdin_console(server: Arc<Server>) {
     });
 }
 
-fn setup_console(mut rl: Editor<PumpkinCommandCompleter, FileHistory>, server: Arc<Server>) {
+#[cfg(not(target_family = "wasm"))]
+fn setup_console(mut rl: ConsoleEditor, server: Arc<Server>) {
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
     let (tx_reply, mut rx_reply) = tokio::sync::mpsc::channel(1);
 
@@ -738,6 +780,7 @@ fn setup_console(mut rl: Editor<PumpkinCommandCompleter, FileHistory>, server: A
     });
 }
 
+#[cfg(not(target_family = "wasm"))]
 fn scrub_address(ip: &str) -> String {
     ip.chars()
         .map(|ch| if ch == '.' || ch == ':' { ch } else { 'x' })

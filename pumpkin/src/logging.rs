@@ -2,13 +2,29 @@
 #![allow(clippy::print_stdout)]
 
 use flate2::write::GzEncoder;
+#[cfg(not(target_family = "wasm"))]
 use rustyline::completion::Completer;
+#[cfg(not(target_family = "wasm"))]
 use rustyline::highlight::Highlighter;
+#[cfg(not(target_family = "wasm"))]
 use rustyline::hint::Hinter;
+#[cfg(not(target_family = "wasm"))]
 use rustyline::history::FileHistory;
+#[cfg(not(target_family = "wasm"))]
 use rustyline::validate::Validator;
+#[cfg(not(target_family = "wasm"))]
 use rustyline::{Editor, Helper};
+#[cfg(not(target_family = "wasm"))]
 use std::borrow::Cow;
+
+// lantern: browser builds have no interactive terminal editor. The alias keeps
+// ReadlineLogWrapper's shape identical on both targets; on wasm it can never be
+// populated (Infallible), so `take_readline()` is always `None` and the server
+// falls back to the plain stdin console — which the page bridges to a terminal.
+#[cfg(not(target_family = "wasm"))]
+pub type ConsoleEditor = Editor<PumpkinCommandCompleter, FileHistory>;
+#[cfg(target_family = "wasm")]
+pub type ConsoleEditor = std::convert::Infallible;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -87,7 +103,7 @@ const MAX_ATTEMPTS: u32 = 1000;
 /// A wrapper for our logger to hold the terminal input while no input is expected in order to
 /// properly flush logs to the output while they happen instead of batched
 pub struct ReadlineLogWrapper {
-    readline: std::sync::Mutex<Option<Editor<PumpkinCommandCompleter, FileHistory>>>,
+    readline: std::sync::Mutex<Option<ConsoleEditor>>,
 }
 
 struct GzipRollingLoggerData {
@@ -310,13 +326,13 @@ impl tracing::field::Visit for StringVisitor {
 
 impl ReadlineLogWrapper {
     #[must_use]
-    pub const fn new(rl: Option<Editor<PumpkinCommandCompleter, FileHistory>>) -> Self {
+    pub const fn new(rl: Option<ConsoleEditor>) -> Self {
         Self {
             readline: std::sync::Mutex::new(rl),
         }
     }
 
-    pub fn take_readline(&self) -> Option<Editor<PumpkinCommandCompleter, FileHistory>> {
+    pub fn take_readline(&self) -> Option<ConsoleEditor> {
         self.readline
             .lock()
             .map_or_else(|_| None, |mut result| result.take())
@@ -325,7 +341,7 @@ impl ReadlineLogWrapper {
     // This isn't really dead code. It is just only used by the lib and not the bin for this
     // crate, and as such creates a compiler warning.
     #[allow(dead_code)]
-    pub fn return_readline(&self, rl: Editor<PumpkinCommandCompleter, FileHistory>) {
+    pub fn return_readline(&self, rl: ConsoleEditor) {
         if let Ok(mut result) = self.readline.lock() {
             let _ = result.insert(rl);
         }
@@ -348,7 +364,9 @@ impl PumpkinCommandCompleter {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Helper for PumpkinCommandCompleter {}
+#[cfg(not(target_family = "wasm"))]
 impl Highlighter for PumpkinCommandCompleter {
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
         line.find(' ').map_or_else(
@@ -364,6 +382,7 @@ impl Highlighter for PumpkinCommandCompleter {
         Cow::Owned(format!("\x1b[90m{hint}\x1b[0m"))
     }
 }
+#[cfg(not(target_family = "wasm"))]
 impl Hinter for PumpkinCommandCompleter {
     type Hint = String;
     fn hint(&self, line: &str, pos: usize, ctx: &rustyline::Context<'_>) -> Option<Self::Hint> {
@@ -387,8 +406,10 @@ impl Hinter for PumpkinCommandCompleter {
     }
 }
 
+#[cfg(not(target_family = "wasm"))]
 impl Validator for PumpkinCommandCompleter {}
 
+#[cfg(not(target_family = "wasm"))]
 impl Completer for PumpkinCommandCompleter {
     type Candidate = String;
 

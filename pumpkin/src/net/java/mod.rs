@@ -51,12 +51,25 @@ use pumpkin_util::text::TextComponent;
 use pumpkin_util::version::JavaMinecraftVersion;
 use tokio::{
     io::{BufReader, BufWriter},
-    net::{
-        TcpStream,
-        tcp::{OwnedReadHalf, OwnedWriteHalf},
-    },
     sync::{Mutex, oneshot},
 };
+#[cfg(not(target_family = "wasm"))]
+use tokio::net::{
+    TcpStream,
+    tcp::{OwnedReadHalf, OwnedWriteHalf},
+};
+
+// lantern: the connection halves are TCP on native and an in-memory duplex on
+// wasm — the browser bridges the duplex to whatever transport it has (WebSocket,
+// WebRTC, an in-page client).
+#[cfg(not(target_family = "wasm"))]
+pub type NetReadHalf = OwnedReadHalf;
+#[cfg(not(target_family = "wasm"))]
+pub type NetWriteHalf = OwnedWriteHalf;
+#[cfg(target_family = "wasm")]
+pub type NetReadHalf = tokio::io::ReadHalf<tokio::io::DuplexStream>;
+#[cfg(target_family = "wasm")]
+pub type NetWriteHalf = tokio::io::WriteHalf<tokio::io::DuplexStream>;
 use tokio::{
     sync::mpsc::{Receiver, Sender, error::TryRecvError},
     task::JoinHandle,
@@ -107,9 +120,9 @@ pub struct JavaClient {
     /// A high-priority queue of serialized packets to send to the network.
     outgoing_packet_priority_recv: Option<Receiver<OutgoingPacket>>,
     /// The packet encoder for outgoing packets.
-    network_writer: Arc<Mutex<TCPNetworkEncoder<BufWriter<OwnedWriteHalf>>>>,
+    network_writer: Arc<Mutex<TCPNetworkEncoder<BufWriter<NetWriteHalf>>>>,
     /// The packet decoder for incoming packets.
-    network_reader: Mutex<TCPNetworkDecoder<BufReader<OwnedReadHalf>>>,
+    network_reader: Mutex<TCPNetworkDecoder<BufReader<NetReadHalf>>>,
     /// Keep Alive:
     ///
     /// Whether we are waiting for a response after sending a keep alive packet.
@@ -149,9 +162,23 @@ impl OutgoingPacket {
 }
 
 impl JavaClient {
+    #[cfg(not(target_family = "wasm"))]
     #[must_use]
     pub fn new(tcp_stream: TcpStream, address: SocketAddr, id: u64) -> Self {
         let (read, write) = tcp_stream.into_split();
+        Self::from_halves(read, write, address, id)
+    }
+
+    /// lantern: connect a client over an in-memory duplex stream (wasm transport).
+    #[cfg(target_family = "wasm")]
+    #[must_use]
+    pub fn new_virtual(stream: tokio::io::DuplexStream, address: SocketAddr, id: u64) -> Self {
+        let (read, write) = tokio::io::split(stream);
+        Self::from_halves(read, write, address, id)
+    }
+
+    #[must_use]
+    fn from_halves(read: NetReadHalf, write: NetWriteHalf, address: SocketAddr, id: u64) -> Self {
         let (send, recv) = tokio::sync::mpsc::channel(4096);
         let (priority_send, priority_recv) = tokio::sync::mpsc::channel(4096);
         Self {

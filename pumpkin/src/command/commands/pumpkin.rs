@@ -24,6 +24,12 @@ struct Contributor {
     login: String,
 }
 
+#[cfg(target_family = "wasm")]
+fn fetch_all_contributors() -> Vec<Contributor> {
+    Vec::new() // lantern: no blocking HTTP on wasm
+}
+
+#[cfg(not(target_family = "wasm"))]
 fn fetch_all_contributors() -> Vec<Contributor> {
     let mut all_contributors = Vec::new();
     let mut next_url = Some(

@@ -33,20 +33,9 @@ pumpkin-codecs.workspace = true
 dashmap.workspace = true
 crossbeam.workspace = true
 uuid.workspace = true
-tokio = { workspace = true, features = [
-    "macros",
-    "net",
-    "rt-multi-thread",
-    "sync",
-    "io-std",
-    "signal",
-    "fs",
-    "io-util",
-    "time",
-] }
+tokio.workspace = true
 thiserror.workspace = true
 futures.workspace = true
-notify.workspace = true
 
 # config
 serde.workspace = true
@@ -62,13 +51,11 @@ rand.workspace = true
 num-bigint.workspace = true
 
 # Console line reading
-rustyline.workspace = true
 
 # encryption
 rsa.workspace = true
 
 # authentication
-ureq = { workspace = true, features = ["json"] }
 
 sha1.workspace = true
 
@@ -85,23 +72,16 @@ tracing-subscriber.workspace = true
 time = { workspace = true, features = ["parsing", "macros", "local-offset"] }
 
 # plugins
-libloading.workspace = true
 rustc-hash.workspace = true
 
 # Task handling
 tokio-util = { workspace = true, features = ["rt"] }
 
 # System details & Rustc version
-sysinfo.workspace = true
-rustc_version_runtime.workspace = true
 
 flate2.workspace = true
 console-subscriber = { workspace = true, optional = true }
 
-wasmtime = { workspace = true }
-wasmtime-wasi = { workspace = true }
-wasmtime-wasi-http = { workspace = true }
-hyper = { workspace = true }
 
 ordered-float.workspace = true
 
@@ -112,6 +92,37 @@ bitflags = { workspace = true }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 
 indexmap.workspace = true
+
+# lantern: native-only platform deps — no dylibs/terminal/fs-watch/system-info/HTTP
+# sockets on wasm, and the wasmtime plugin host cannot run inside wasm.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+notify.workspace = true
+rustyline.workspace = true
+ureq = { workspace = true, features = ["json"] }
+libloading.workspace = true
+sysinfo.workspace = true
+rustc_version_runtime.workspace = true
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+wasmtime-wasi-http = { workspace = true }
+hyper = { workspace = true }
+tokio = { workspace = true, features = [
+    "macros",
+    "net",
+    "rt-multi-thread",
+    "sync",
+    "io-std",
+    "signal",
+    "fs",
+    "io-util",
+    "time",
+] }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "sync", "io-util", "time"] }
+# lantern: Uri/StatusCode types normally re-exported by ureq
+http = "1"
+
 
 [dev-dependencies]
 tempfile.workspace = true
