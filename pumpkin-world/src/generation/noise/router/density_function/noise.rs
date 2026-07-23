@@ -41,6 +41,7 @@ impl NoiseFunctionComponentRange for Noise {
 }
 
 impl StaticIndependentChunkNoiseFunctionComponentImpl for Noise {
+
     fn sample(&self, pos: &Vector3<i32>) -> f64 {
         self.sampler.sample(
             pos.x as f64 * self.data.xz_scale,
@@ -238,6 +239,7 @@ impl NoiseFunctionComponentRange for InterpolatedNoiseSampler {
 }
 
 impl StaticIndependentChunkNoiseFunctionComponentImpl for InterpolatedNoiseSampler {
+
     fn sample(&self, pos: &Vector3<i32>) -> f64 {
         let xz_multiplier = self.data.scaled_xz_scale * 684.412;
 

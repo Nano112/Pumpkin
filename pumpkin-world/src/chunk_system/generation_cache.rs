@@ -354,12 +354,8 @@ impl Cache {
         block_registry: &dyn WorldPortalExt,
         lighting_config: &LightingEngineConfig,
     ) {
-        // lantern: per-stage wall-time accounting (negligible overhead).
-        let _timing_start = std::time::Instant::now();
-        let _timing_guard = crate::chunk_system::gen_timing::Guard {
-            stage: stage as u8,
-            start: _timing_start,
-        };
+        // lantern: per-stage wall-time accounting (no-op unless bench mode).
+        let _timing_guard = crate::chunk_system::gen_timing::Guard::new(stage as u8);
         let mid = ((self.size * self.size) >> 1) as usize;
         match &self.chunks[mid] {
             Chunk::Level(_) => return,

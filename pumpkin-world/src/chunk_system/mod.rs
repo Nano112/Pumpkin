@@ -21,13 +21,14 @@ pub mod gen_timing {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Instant;
 
-    const STAGES: usize = 19;
+    const STAGES: usize = 22;
     pub const NAMES: [&str; STAGES] = [
         "none", "empty", "biomes", "structure_start", "structure_refs", "noise",
         "surface", "carvers", "features", "lighting", "spawn",
         // sub-slots for drill-down profiling
         "sr:sampler_build", "sr:spread_candidates", "sr:strongholds", "sr:start_compute", "sr:miss_compute",
         "n:end_density", "n:corners", "n:fill",
+        "fill:independent", "dep:spline", "fill:lazy_binop",
     ];
 
     pub const SLOT_SR_SAMPLER: u8 = 11;
@@ -38,27 +39,46 @@ pub mod gen_timing {
     pub const SLOT_N_END_DENSITY: u8 = 16;
     pub const SLOT_N_CORNERS: u8 = 17;
     pub const SLOT_N_FILL: u8 = 18;
+    pub const SLOT_LEAF_BLENDED: u8 = 19;
+    pub const SLOT_LEAF_NOISE: u8 = 20;
+    pub const SLOT_LEAF_SHIFTED: u8 = 21;
 
     /// Times a closure into the given slot.
     pub fn time<R>(slot: u8, f: impl FnOnce() -> R) -> R {
-        let _g = Guard { stage: slot, start: Instant::now() };
+        let _g = Guard::new(slot);
         f()
     }
 
     static NANOS: [AtomicU64; STAGES] = [const { AtomicU64::new(0) }; STAGES];
     static COUNTS: [AtomicU64; STAGES] = [const { AtomicU64::new(0) }; STAGES];
+    static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+    /// Turns profiling on (e.g. when a bench harness runs). Off by default so
+    /// production pays no clock-call overhead in hot paths.
+    pub fn set_enabled(on: bool) {
+        ENABLED.store(on, Ordering::Relaxed);
+    }
 
     /// Records elapsed time for its stage on drop, so early returns and
     /// panics inside `advance` are still accounted.
     pub struct Guard {
         pub stage: u8,
-        pub start: Instant,
+        pub start: Option<Instant>,
+    }
+
+    impl Guard {
+        #[must_use]
+        pub fn new(stage: u8) -> Self {
+            let start = ENABLED.load(Ordering::Relaxed).then(Instant::now);
+            Self { stage, start }
+        }
     }
 
     impl Drop for Guard {
         fn drop(&mut self) {
+            let Some(start) = self.start else { return };
             let idx = (self.stage as usize).min(STAGES - 1);
-            let nanos = u64::try_from(self.start.elapsed().as_nanos()).unwrap_or(u64::MAX);
+            let nanos = u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX);
             NANOS[idx].fetch_add(nanos, Ordering::Relaxed);
             COUNTS[idx].fetch_add(1, Ordering::Relaxed);
         }

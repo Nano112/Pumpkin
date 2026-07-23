@@ -826,10 +826,7 @@ impl ProtoChunk {
                     );
                     let sample_start_y = (minimum_cell_y as i32 + cell_y as i32) * v_count;
 
-                    let _fill_guard = crate::chunk_system::gen_timing::Guard {
-                        stage: crate::chunk_system::gen_timing::SLOT_N_FILL,
-                        start: std::time::Instant::now(),
-                    };
+                    let _fill_guard = crate::chunk_system::gen_timing::Guard::new(crate::chunk_system::gen_timing::SLOT_N_FILL);
                     for local_y in (0..v_count).rev() {
                         let block_y = sample_start_y + local_y;
                         noise_sampler.interpolate_y(local_y as f64 * delta_y_step);
@@ -1372,10 +1369,7 @@ impl ProtoChunk {
 
             match &set.placement.placement_type {
                 StructurePlacementType::RandomSpread(spread) => {
-                    let _g = crate::chunk_system::gen_timing::Guard {
-                        stage: crate::chunk_system::gen_timing::SLOT_SR_SPREAD,
-                        start: std::time::Instant::now(),
-                    };
+                    let _g = crate::chunk_system::gen_timing::Guard::new(crate::chunk_system::gen_timing::SLOT_SR_SPREAD);
                     let region_x = pumpkin_util::math::floor_div(self.x, spread.spacing);
                     let region_z = pumpkin_util::math::floor_div(self.z, spread.spacing);
 
@@ -1394,10 +1388,7 @@ impl ProtoChunk {
                     }
                 }
                 StructurePlacementType::ConcentricRings(rings) => {
-                    let _g = crate::chunk_system::gen_timing::Guard {
-                        stage: crate::chunk_system::gen_timing::SLOT_SR_STRONGHOLD,
-                        start: std::time::Instant::now(),
-                    };
+                    let _g = crate::chunk_system::gen_timing::Guard::new(crate::chunk_system::gen_timing::SLOT_SR_STRONGHOLD);
                     let allowed_biomes = Self::get_allowed_biomes(set);
                     let strongholds = global_cache.get_or_calculate_strongholds(
                         seed,
@@ -1424,10 +1415,7 @@ impl ProtoChunk {
                         // world seed, so cache it: otherwise every surrounding chunk whose
                         // references overlap it would re-run the (expensive) jigsaw
                         // expansion. `context` is only built on a cache miss.
-                        let _g = crate::chunk_system::gen_timing::Guard {
-                            stage: crate::chunk_system::gen_timing::SLOT_SR_COMPUTE,
-                            start: std::time::Instant::now(),
-                        };
+                        let _g = crate::chunk_system::gen_timing::Guard::new(crate::chunk_system::gen_timing::SLOT_SR_COMPUTE);
                         let start_data = global_cache.get_or_compute_structure_start(
                             entry.structure,
                             candidate_chunk_x,
