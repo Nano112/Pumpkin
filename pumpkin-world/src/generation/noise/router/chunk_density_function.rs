@@ -610,10 +610,13 @@ impl MutableChunkNoiseFunctionComponentImpl for CacheOnce {
         mapper: &impl IndexToNoisePos,
         sample_options: &mut ChunkNoiseFunctionSampleOptions,
     ) {
+        // Cache hits can only come from the same fill pass (the unique-id
+        // guard), so lengths always match within a pass; slice to tolerate a
+        // buffer grown by a previous, larger pass.
         if self.cache_fill_unique_id == sample_options.cache_fill_unique_id
-            && !self.cache.is_empty()
+            && self.cache.len() >= array.len()
         {
-            array.copy_from_slice(&self.cache);
+            array.copy_from_slice(&self.cache[..array.len()]);
             return;
         }
 
@@ -624,12 +627,14 @@ impl MutableChunkNoiseFunctionComponentImpl for CacheOnce {
             sample_options,
         );
 
-        // We need to make a new cache
-        if self.cache.len() != array.len() {
+        // lantern perf: fills alternate between column-sized (49) and
+        // cell-cache-sized (128) arrays; an exact-size cache reallocated on
+        // EVERY size flip (heap traffic wasm can't afford). Grow-only instead.
+        if self.cache.len() < array.len() {
             self.cache = vec![0.0; array.len()].into_boxed_slice();
         }
 
-        self.cache.copy_from_slice(array);
+        self.cache[..array.len()].copy_from_slice(array);
         self.cache_fill_unique_id = sample_options.cache_fill_unique_id;
     }
 }

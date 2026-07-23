@@ -808,7 +808,10 @@ impl ProtoChunk {
 
         noise_sampler.sample_start_density();
         for cell_x in 0..horizontal_cells {
-            noise_sampler.sample_end_density(cell_x);
+            crate::chunk_system::gen_timing::time(
+                crate::chunk_system::gen_timing::SLOT_N_END_DENSITY,
+                || noise_sampler.sample_end_density(cell_x),
+            );
             let sample_start_x = (self.start_cell_x(h_count) + cell_x) * h_count;
             let block_x_base = self.start_block_x() + cell_x * h_count;
 
@@ -817,9 +820,16 @@ impl ProtoChunk {
                 let block_z_base = self.start_block_z() + cell_z * h_count;
 
                 for cell_y in (0..cell_height).rev() {
-                    noise_sampler.on_sampled_cell_corners(cell_x, cell_y as i32, cell_z);
+                    crate::chunk_system::gen_timing::time(
+                        crate::chunk_system::gen_timing::SLOT_N_CORNERS,
+                        || noise_sampler.on_sampled_cell_corners(cell_x, cell_y as i32, cell_z),
+                    );
                     let sample_start_y = (minimum_cell_y as i32 + cell_y as i32) * v_count;
 
+                    let _fill_guard = crate::chunk_system::gen_timing::Guard {
+                        stage: crate::chunk_system::gen_timing::SLOT_N_FILL,
+                        start: std::time::Instant::now(),
+                    };
                     for local_y in (0..v_count).rev() {
                         let block_y = sample_start_y + local_y;
                         noise_sampler.interpolate_y(local_y as f64 * delta_y_step);

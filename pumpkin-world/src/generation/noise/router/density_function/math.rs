@@ -196,10 +196,24 @@ impl StaticChunkNoiseFunctionComponentImpl for Binary {
 
         match self.data.operation {
             BinaryOperation::Add => {
-                let mut scratch = vec![0.0f64; array.len()];
+                // lantern perf: this fill runs for every Add node of every
+                // interpolator column — a heap allocation per call is ~9x
+                // slower on wasm (dlmalloc + shared-memory lock). Fill sizes
+                // are small (49-item columns, 128-item cell caches), so use
+                // the stack and only fall back to the heap for oversized
+                // arrays. Arithmetic is unchanged (bit-exact).
+                const STACK_FILL: usize = 128;
+                let mut stack_buf = [0.0f64; STACK_FILL];
+                let mut heap_buf: Vec<f64>;
+                let scratch: &mut [f64] = if array.len() <= STACK_FILL {
+                    &mut stack_buf[..array.len()]
+                } else {
+                    heap_buf = vec![0.0f64; array.len()];
+                    &mut heap_buf
+                };
                 ChunkNoiseFunctionComponent::fill_from_stack(
                     &mut component_stack[..=self.input2_index],
-                    &mut scratch,
+                    scratch,
                     mapper,
                     sample_options,
                 );

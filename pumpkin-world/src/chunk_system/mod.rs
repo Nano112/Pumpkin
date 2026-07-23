@@ -21,12 +21,13 @@ pub mod gen_timing {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::Instant;
 
-    const STAGES: usize = 16;
+    const STAGES: usize = 19;
     pub const NAMES: [&str; STAGES] = [
         "none", "empty", "biomes", "structure_start", "structure_refs", "noise",
         "surface", "carvers", "features", "lighting", "spawn",
         // sub-slots for drill-down profiling
         "sr:sampler_build", "sr:spread_candidates", "sr:strongholds", "sr:start_compute", "sr:miss_compute",
+        "n:end_density", "n:corners", "n:fill",
     ];
 
     pub const SLOT_SR_SAMPLER: u8 = 11;
@@ -34,6 +35,9 @@ pub mod gen_timing {
     pub const SLOT_SR_STRONGHOLD: u8 = 13;
     pub const SLOT_SR_COMPUTE: u8 = 14;
     pub const SLOT_SR_INSERT: u8 = 15;
+    pub const SLOT_N_END_DENSITY: u8 = 16;
+    pub const SLOT_N_CORNERS: u8 = 17;
+    pub const SLOT_N_FILL: u8 = 18;
 
     /// Times a closure into the given slot.
     pub fn time<R>(slot: u8, f: impl FnOnce() -> R) -> R {
