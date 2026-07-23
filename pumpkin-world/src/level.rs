@@ -281,6 +281,8 @@ impl Level {
             .max(1);
         // lantern: every thread is a Web Worker instantiating the whole module —
         // keep the per-dimension pipeline minimal on wasm.
+        // Measured on wasm (bench=4): 2 threads → 9.0 chunks/s, 4 threads →
+        // 4.0 chunks/s. More workers = contention, not throughput.
         #[cfg(target_family = "wasm")]
         let threads_per_dimension = 2;
         #[cfg(not(target_family = "wasm"))]
