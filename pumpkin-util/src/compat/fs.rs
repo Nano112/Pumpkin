@@ -64,6 +64,20 @@ pub async fn try_exists(path: impl AsRef<Path>) -> io::Result<bool> {
     Ok(store().contains_key(path.as_ref()))
 }
 
+/// lantern: point-in-time copy of every file, for host-side persistence.
+#[must_use]
+pub fn snapshot_entries() -> Vec<(PathBuf, Vec<u8>)> {
+    store().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+}
+
+/// lantern: restore a previously snapshotted set of files (replaces matches).
+pub fn restore_entries(entries: Vec<(PathBuf, Vec<u8>)>) {
+    let mut files = store();
+    for (path, data) in entries {
+        files.insert(path, data);
+    }
+}
+
 /// An in-memory file handle. Writes go to a local buffer and are published to
 /// the global store on flush/shutdown (mirrors needing `flush().await` with
 /// real files).
