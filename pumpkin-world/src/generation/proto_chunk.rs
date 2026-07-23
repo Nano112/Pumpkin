@@ -1342,21 +1342,15 @@ impl ProtoChunk {
         };
         let blender = Blender::empty();
         let biome_supplier = blender.get_biome_supplier(base_supplier);
-        let multi_noise_config = MultiNoiseSamplerBuilderOptions::new(0, 0, 0);
-        let mut multi_noise_sampler =
-            MultiNoiseSampler::generate(&noise_router.multi_noise, &multi_noise_config);
-
-        let mut height_sampler = crate::generation::noise::router::surface_height_sampler::SurfaceHeightEstimateSampler::generate(
-            &noise_router.surface_estimator,
-            &crate::generation::noise::router::surface_height_sampler::SurfaceHeightSamplerBuilderOptions::new(
-                crate::generation::biome_coords::from_block(start_x),
-                crate::generation::biome_coords::from_block(start_z),
-                4,
-                settings.shape.min_y as i32,
-                settings.shape.height as i32,
-                (settings.shape.height / settings.shape.vertical_cell_block_count() as u16) as usize,
-            ),
-        );
+        // lantern perf: building these samplers copies the entire noise-router
+        // component stack (~15ms of the old 15.2ms/run cost of this stage).
+        // They are only consumed on a structure-start cache MISS, which is rare
+        // (each start is computed once and then hit by up to 17x17 neighboring
+        // chunks) — so construct them lazily, at most once per call.
+        let mut multi_noise_sampler: Option<MultiNoiseSampler> = None;
+        let mut height_sampler: Option<
+            crate::generation::noise::router::surface_height_sampler::SurfaceHeightEstimateSampler,
+        > = None;
 
         let mut references = Vec::new();
         // Constant across every chunk in the dimension, so hoist it out of the loop
@@ -1368,6 +1362,10 @@ impl ProtoChunk {
 
             match &set.placement.placement_type {
                 StructurePlacementType::RandomSpread(spread) => {
+                    let _g = crate::chunk_system::gen_timing::Guard {
+                        stage: crate::chunk_system::gen_timing::SLOT_SR_SPREAD,
+                        start: std::time::Instant::now(),
+                    };
                     let region_x = pumpkin_util::math::floor_div(self.x, spread.spacing);
                     let region_z = pumpkin_util::math::floor_div(self.z, spread.spacing);
 
@@ -1386,6 +1384,10 @@ impl ProtoChunk {
                     }
                 }
                 StructurePlacementType::ConcentricRings(rings) => {
+                    let _g = crate::chunk_system::gen_timing::Guard {
+                        stage: crate::chunk_system::gen_timing::SLOT_SR_STRONGHOLD,
+                        start: std::time::Instant::now(),
+                    };
                     let allowed_biomes = Self::get_allowed_biomes(set);
                     let strongholds = global_cache.get_or_calculate_strongholds(
                         seed,
@@ -1412,11 +1414,40 @@ impl ProtoChunk {
                         // world seed, so cache it: otherwise every surrounding chunk whose
                         // references overlap it would re-run the (expensive) jigsaw
                         // expansion. `context` is only built on a cache miss.
+                        let _g = crate::chunk_system::gen_timing::Guard {
+                            stage: crate::chunk_system::gen_timing::SLOT_SR_COMPUTE,
+                            start: std::time::Instant::now(),
+                        };
                         let start_data = global_cache.get_or_compute_structure_start(
                             entry.structure,
                             candidate_chunk_x,
                             candidate_chunk_z,
-                            || {
+                            || crate::chunk_system::gen_timing::time(
+                                crate::chunk_system::gen_timing::SLOT_SR_INSERT,
+                                || {
+                                let multi_noise_sampler =
+                                    multi_noise_sampler.get_or_insert_with(|| {
+                                        crate::chunk_system::gen_timing::time(
+                                            crate::chunk_system::gen_timing::SLOT_SR_SAMPLER,
+                                            || MultiNoiseSampler::generate(
+                                                &noise_router.multi_noise,
+                                                &MultiNoiseSamplerBuilderOptions::new(0, 0, 0),
+                                            ),
+                                        )
+                                    });
+                                let height_sampler = height_sampler.get_or_insert_with(|| {
+                                    crate::generation::noise::router::surface_height_sampler::SurfaceHeightEstimateSampler::generate(
+                                        &noise_router.surface_estimator,
+                                        &crate::generation::noise::router::surface_height_sampler::SurfaceHeightSamplerBuilderOptions::new(
+                                            crate::generation::biome_coords::from_block(start_x),
+                                            crate::generation::biome_coords::from_block(start_z),
+                                            4,
+                                            settings.shape.min_y as i32,
+                                            settings.shape.height as i32,
+                                            (settings.shape.height / settings.shape.vertical_cell_block_count() as u16) as usize,
+                                        ),
+                                    )
+                                });
                                 let context = StructureGeneratorContext {
                                     seed,
                                     chunk_x: candidate_chunk_x,
@@ -1428,7 +1459,7 @@ impl ProtoChunk {
                                     ),
                                     sea_level: settings.sea_level,
                                     min_y: chunk_min_y,
-                                    height_sampler: Some(&mut height_sampler),
+                                    height_sampler: Some(height_sampler),
                                     structure_key: Some(entry.structure),
                                 };
                                 lazily_generate_structure(
@@ -1436,9 +1467,9 @@ impl ProtoChunk {
                                     structure,
                                     context,
                                     &biome_supplier,
-                                    &mut multi_noise_sampler,
+                                    multi_noise_sampler,
                                 )
-                            },
+                            }),
                         );
 
                         if let Some(start_data) = start_data
