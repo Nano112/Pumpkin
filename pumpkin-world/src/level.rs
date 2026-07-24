@@ -213,6 +213,38 @@ impl Level {
             }
         }
 
+        // lantern: host-driven generator override — schematic-viewer worlds ask
+        // for void/flat without crafting world_gen_settings NBT.
+        if let Ok(mode) = std::env::var("LANTERN_WORLDGEN") {
+            match mode.as_str() {
+                "void" => {
+                    is_flat = true;
+                    flat_layers = vec![crate::generation::generator::FlatLayer {
+                        block: "minecraft:bedrock".to_string(),
+                        height: 1,
+                    }];
+                }
+                "flat" => {
+                    is_flat = true;
+                    flat_layers = vec![
+                        crate::generation::generator::FlatLayer {
+                            block: "minecraft:bedrock".to_string(),
+                            height: 1,
+                        },
+                        crate::generation::generator::FlatLayer {
+                            block: "minecraft:dirt".to_string(),
+                            height: 2,
+                        },
+                        crate::generation::generator::FlatLayer {
+                            block: "minecraft:grass_block".to_string(),
+                            height: 1,
+                        },
+                    ];
+                }
+                _ => {}
+            }
+        }
+
         let seed = Seed(seed as u64);
         let world_gen: Arc<WorldGenerator> = Arc::from(get_world_gen(
             seed,
