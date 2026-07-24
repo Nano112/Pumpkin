@@ -161,6 +161,54 @@ impl StaticChunkNoiseFunctionComponentImpl for ShiftedNoise {
         self.sampler
             .sample(translated_x, translated_y, translated_z)
     }
+
+    fn fill(
+        &self,
+        component_stack: &mut [ChunkNoiseFunctionComponent],
+        array: &mut [f64],
+        mapper: &impl super::IndexToNoisePos,
+        sample_options: &mut ChunkNoiseFunctionSampleOptions,
+    ) {
+        // lantern batch-eval: the three shift inputs are array-filled once
+        // instead of being re-sampled through the stack per element; the
+        // remaining per-element work is pure noise math with no dispatch.
+        let len = array.len();
+        let mut shift_x = super::batch::take(len);
+        ChunkNoiseFunctionComponent::fill_from_stack(
+            &mut component_stack[..=self.input_x_index],
+            &mut shift_x,
+            mapper,
+            sample_options,
+        );
+        let mut shift_y = super::batch::take(len);
+        ChunkNoiseFunctionComponent::fill_from_stack(
+            &mut component_stack[..=self.input_y_index],
+            &mut shift_y,
+            mapper,
+            sample_options,
+        );
+        let mut shift_z = super::batch::take(len);
+        ChunkNoiseFunctionComponent::fill_from_stack(
+            &mut component_stack[..=self.input_z_index],
+            &mut shift_z,
+            mapper,
+            sample_options,
+        );
+
+        for index in 0..len {
+            let pos = mapper.at(index, Some(sample_options));
+            let translated_x = pos.x as f64 * self.data.xz_scale + shift_x[index];
+            let translated_y = pos.y as f64 * self.data.y_scale + shift_y[index];
+            let translated_z = pos.z as f64 * self.data.xz_scale + shift_z[index];
+            array[index] = self
+                .sampler
+                .sample(translated_x, translated_y, translated_z);
+        }
+
+        super::batch::give(shift_x);
+        super::batch::give(shift_y);
+        super::batch::give(shift_z);
+    }
 }
 
 impl ShiftedNoise {

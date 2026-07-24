@@ -147,10 +147,7 @@ impl StaticChunkNoiseFunctionComponentImpl for IntervalSelect {
             sample_options,
         );
 
-        array.iter_mut().enumerate().for_each(|(index, value)| {
-            let pos = mapper.at(index, Some(sample_options));
-            let input_val = *value;
-
+        let select = |input_val: f64| {
             let mut selected_index = self.thresholds.len();
             for (i, &threshold) in self.thresholds.iter().enumerate() {
                 if input_val < threshold {
@@ -158,14 +155,47 @@ impl StaticChunkNoiseFunctionComponentImpl for IntervalSelect {
                     break;
                 }
             }
+            selected_index
+        };
 
-            let func_index = self.functions_indices[selected_index];
-            *value = ChunkNoiseFunctionComponent::sample_from_stack(
-                &mut component_stack[..=func_index],
-                &pos,
-                sample_options,
-            );
-        });
+        let bucket_count = self.thresholds.len() + 1;
+        let mut counts = vec![0usize; bucket_count];
+        for value in array.iter() {
+            counts[select(*value)] += 1;
+        }
+
+        let mut bufs: Vec<Option<Vec<f64>>> = Vec::with_capacity(bucket_count);
+        for (bucket, &count) in counts.iter().enumerate() {
+            if super::batch::batch_worthwhile(count, array.len()) {
+                let mut buf = super::batch::take(array.len());
+                ChunkNoiseFunctionComponent::fill_from_stack(
+                    &mut component_stack[..=self.functions_indices[bucket]],
+                    &mut buf,
+                    mapper,
+                    sample_options,
+                );
+                bufs.push(Some(buf));
+            } else {
+                bufs.push(None);
+            }
+        }
+
+        for index in 0..array.len() {
+            let bucket = select(array[index]);
+            array[index] = if let Some(buf) = &bufs[bucket] {
+                buf[index]
+            } else {
+                let pos = mapper.at(index, Some(sample_options));
+                ChunkNoiseFunctionComponent::sample_from_stack(
+                    &mut component_stack[..=self.functions_indices[bucket]],
+                    &pos,
+                    sample_options,
+                )
+            };
+        }
+        for buf in bufs.into_iter().flatten() {
+            super::batch::give(buf);
+        }
     }
 }
 
@@ -298,21 +328,53 @@ impl StaticChunkNoiseFunctionComponentImpl for RangeChoice {
             sample_options,
         );
 
-        array.iter_mut().enumerate().for_each(|(index, value)| {
-            let pos = mapper.at(index, Some(sample_options));
-            *value = if self.data.min_inclusive <= *value && *value < self.data.max_exclusive {
-                ChunkNoiseFunctionComponent::sample_from_stack(
-                    &mut component_stack[..=self.when_in_index],
-                    &pos,
-                    sample_options,
-                )
+        let in_range = |v: f64| self.data.min_inclusive <= v && v < self.data.max_exclusive;
+        let in_count = array.iter().filter(|v| in_range(**v)).count();
+
+        let in_buf = super::batch::batch_worthwhile(in_count, array.len()).then(|| {
+            let mut buf = super::batch::take(array.len());
+            ChunkNoiseFunctionComponent::fill_from_stack(
+                &mut component_stack[..=self.when_in_index],
+                &mut buf,
+                mapper,
+                sample_options,
+            );
+            buf
+        });
+        let out_buf = super::batch::batch_worthwhile(array.len() - in_count, array.len()).then(|| {
+            let mut buf = super::batch::take(array.len());
+            ChunkNoiseFunctionComponent::fill_from_stack(
+                &mut component_stack[..=self.when_out_index],
+                &mut buf,
+                mapper,
+                sample_options,
+            );
+            buf
+        });
+
+        for index in 0..array.len() {
+            let value = array[index];
+            let (batched, branch_index) = if in_range(value) {
+                (&in_buf, self.when_in_index)
             } else {
+                (&out_buf, self.when_out_index)
+            };
+            array[index] = if let Some(buf) = batched {
+                buf[index]
+            } else {
+                let pos = mapper.at(index, Some(sample_options));
                 ChunkNoiseFunctionComponent::sample_from_stack(
-                    &mut component_stack[..=self.when_out_index],
+                    &mut component_stack[..=branch_index],
                     &pos,
                     sample_options,
                 )
             };
-        });
+        }
+        if let Some(buf) = in_buf {
+            super::batch::give(buf);
+        }
+        if let Some(buf) = out_buf {
+            super::batch::give(buf);
+        }
     }
 }

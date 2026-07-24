@@ -27,6 +27,50 @@ pub trait IndexToNoisePos {
     ) -> Vector3<i32>;
 }
 
+/// lantern batch-eval support.
+///
+/// Recursive per-element `sample_from_stack` fallbacks inside `fill`
+/// implementations are the dominant worldgen cost on wasm (measured: 17M+
+/// node invocations per 121 chunks, ~2-4x native overhead per call). Nodes
+/// with conditional inputs now count how many elements actually need the
+/// second input and, above [`batch_worthwhile`], evaluate it as one array
+/// fill into a pooled scratch buffer instead — identical arithmetic per
+/// element (all component fills mirror per-element sample semantics), so
+/// output is bit-exact; only the evaluation strategy changes.
+pub(crate) mod batch {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static POOL: RefCell<Vec<Vec<f64>>> = const { RefCell::new(Vec::new()) };
+    }
+
+    /// A zeroed scratch buffer of exactly `len`, reusing pooled allocations.
+    pub fn take(len: usize) -> Vec<f64> {
+        let mut buf = POOL
+            .with(|p| p.borrow_mut().pop())
+            .unwrap_or_default();
+        buf.clear();
+        buf.resize(len, 0.0);
+        buf
+    }
+
+    pub fn give(buf: Vec<f64>) {
+        POOL.with(|p| {
+            let mut pool = p.borrow_mut();
+            if pool.len() < 32 {
+                pool.push(buf);
+            }
+        });
+    }
+
+    /// Batch the second input when at least a quarter of elements need it:
+    /// below that, lazy per-element evaluation touches less total work.
+    #[inline]
+    pub fn batch_worthwhile(triggers: usize, len: usize) -> bool {
+        triggers * 4 >= len
+    }
+}
+
 #[enum_dispatch]
 pub trait NoiseFunctionComponentRange {
     fn min(&self) -> f64;
