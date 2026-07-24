@@ -370,7 +370,13 @@ impl Cache {
                         .get_proto_chunk_mut()
                         .set_structure_starts(noise_gen);
                 }
-                generator::WorldGenerator::Flat(_) => {}
+                generator::WorldGenerator::Flat(_) => {
+                    // lantern fix: a no-op stage must still advance the stage
+                    // marker, or the scheduler re-queues this task forever
+                    // ("Restored N stranded ready chunk tasks" livelock).
+                    self.chunks[mid].get_proto_chunk_mut().stage =
+                        StagedChunkEnum::StructureStart;
+                }
             },
             StagedChunkEnum::StructureReferences => match generator {
                 generator::WorldGenerator::Noise(noise_gen) => {
@@ -378,7 +384,11 @@ impl Cache {
                         .get_proto_chunk_mut()
                         .set_structure_references(noise_gen);
                 }
-                generator::WorldGenerator::Flat(_) => {}
+                generator::WorldGenerator::Flat(_) => {
+                    // lantern fix: see StructureStart above.
+                    self.chunks[mid].get_proto_chunk_mut().stage =
+                        StagedChunkEnum::StructureReferences;
+                }
             },
             StagedChunkEnum::Biomes => match generator {
                 generator::WorldGenerator::Noise(noise_gen) => {
