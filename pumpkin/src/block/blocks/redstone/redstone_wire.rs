@@ -200,13 +200,17 @@ impl BlockBehaviour for RedstoneWireBlock {
     ) -> BlockFuture<'a, u8> {
         Box::pin(async move {
             let wire = RedstoneWireProperties::from_state_id(args.state.id, args.block);
-            if args.direction == BlockDirection::Up
-                || wire.is_side_connected(args.direction.opposite().to_horizontal_facing().unwrap())
-            {
-                wire.power
-            } else {
-                0
-            }
+            // Vanilla: wires emit no signal downward; Down.opposite() has no
+            // horizontal facing, so the old unwrap panicked on that query.
+            let connected = match args.direction {
+                BlockDirection::Down => false,
+                BlockDirection::Up => true,
+                d => d
+                    .opposite()
+                    .to_horizontal_facing()
+                    .is_some_and(|f| wire.is_side_connected(f)),
+            };
+            if connected { wire.power } else { 0 }
         })
     }
 
@@ -216,13 +220,17 @@ impl BlockBehaviour for RedstoneWireBlock {
     ) -> BlockFuture<'a, u8> {
         Box::pin(async move {
             let wire = RedstoneWireProperties::from_state_id(args.state.id, args.block);
-            if args.direction == BlockDirection::Up
-                || wire.is_side_connected(args.direction.opposite().to_horizontal_facing().unwrap())
-            {
-                wire.power
-            } else {
-                0
-            }
+            // Vanilla: wires emit no signal downward; Down.opposite() has no
+            // horizontal facing, so the old unwrap panicked on that query.
+            let connected = match args.direction {
+                BlockDirection::Down => false,
+                BlockDirection::Up => true,
+                d => d
+                    .opposite()
+                    .to_horizontal_facing()
+                    .is_some_and(|f| wire.is_side_connected(f)),
+            };
+            if connected { wire.power } else { 0 }
         })
     }
 
