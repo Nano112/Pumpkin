@@ -655,6 +655,24 @@ impl Level {
         )));
     }
 
+    /// lantern: swap in a density-driven generator (SDF worlds).
+    pub fn lantern_swap_generator_density(
+        &self,
+        seed: Seed,
+        density: std::sync::Arc<crate::generation::generator::flat::DensityFn>,
+        biome: String,
+    ) {
+        let dimension = self.world_gen.load().dimension().clone();
+        let mut flat = crate::generation::generator::flat::FlatGenerator::new(
+            seed,
+            dimension,
+            Vec::new(),
+            biome,
+        );
+        flat.density = Some(density);
+        self.world_gen.store(Arc::new(WorldGenerator::Flat(flat)));
+    }
+
     pub fn clean_memory(self: &Arc<Self>) -> Vec<Vector2<i32>> {
         self.chunk_watchers.retain(|_, watcher| *watcher != 0);
 
