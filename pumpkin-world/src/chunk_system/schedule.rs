@@ -1041,21 +1041,23 @@ impl GenerationSchedule {
                 self.process_unload_queue();
             }
             if level.lantern_drop_all_chunks.swap(false, Relaxed) {
-                // World reset: wipe every idle chunk's progress and replay
-                // task creation (None -> old target) through resort_work, so
-                // chunks players still watch regenerate immediately. Levels
-                // themselves didn't change, so merely dropping holders would
-                // leave re-requests without tasks — hanging their listeners.
+                // World reset: authoritative source is last_level — every
+                // chunk some ticket still wants. Wipe idle holders' progress
+                // and replay None -> wanted-stage through resort_work so
+                // watched chunks regenerate with the new generator. Holders
+                // with any in-flight or queued task are left untouched.
+                let levels = self.last_level.clone();
                 let mut changes: HashMapType<ChunkPos, (StagedChunkEnum, StagedChunkEnum)> =
                     HashMapType::default();
-                let mut junk: Vec<ChunkPos> = Vec::new();
-                let mut reset_count = 0usize;
-                for (pos, holder) in self.chunk_map.iter_mut() {
-                    if !holder.occupied.is_null()
-                        || holder.dependency_stage != StagedChunkEnum::None
-                        || holder.tasks.iter().any(|t| !t.is_null())
-                    {
-                        continue; // active in the pipeline — leave untouched
+                let mut wiped = 0usize;
+                for (pos, lvl) in &levels {
+                    let wanted = StagedChunkEnum::level_to_stage(*lvl);
+                    if wanted == StagedChunkEnum::None {
+                        continue;
+                    }
+                    let holder = self.chunk_map.entry(*pos).or_default();
+                    if !holder.occupied.is_null() || holder.tasks.iter().any(|t| !t.is_null()) {
+                        continue;
                     }
                     if holder.public {
                         self.public_chunk_map.remove(pos);
@@ -1063,24 +1065,35 @@ impl GenerationSchedule {
                     }
                     holder.chunk = None;
                     holder.current_stage = StagedChunkEnum::None;
-                    reset_count += 1;
-                    if holder.target_stage == StagedChunkEnum::None {
-                        junk.push(*pos);
-                    } else {
-                        changes.insert(*pos, (StagedChunkEnum::None, holder.target_stage));
-                        holder.target_stage = StagedChunkEnum::None;
-                    }
+                    holder.dependency_stage = StagedChunkEnum::None;
+                    holder.target_stage = StagedChunkEnum::None;
+                    wiped += 1;
+                    changes.insert(*pos, (StagedChunkEnum::None, wanted));
                 }
-                for pos in &junk {
-                    self.chunk_map.remove(pos);
-                    self.unload_chunks.remove(pos);
+                // Idle holders no ticket cares about: wipe their data too so a
+                // later request regenerates instead of serving old terrain.
+                for (pos, holder) in self.chunk_map.iter_mut() {
+                    if changes.contains_key(pos)
+                        || !holder.occupied.is_null()
+                        || holder.tasks.iter().any(|t| !t.is_null())
+                    {
+                        continue;
+                    }
+                    if holder.public {
+                        self.public_chunk_map.remove(pos);
+                        holder.public = false;
+                    }
+                    holder.chunk = None;
+                    holder.current_stage = StagedChunkEnum::None;
+                    holder.dependency_stage = StagedChunkEnum::None;
+                    wiped += 1;
                 }
                 let rebuilds = changes.len();
                 if rebuilds > 0 {
-                    self.resort_work((Some((changes, self.last_level.clone())), None));
+                    self.resort_work((Some((changes, levels)), None));
                 }
                 info!(
-                    "lantern: world reset — {reset_count} chunks wiped, {rebuilds} regenerating for watchers"
+                    "lantern: world reset — {wiped} chunks wiped, {rebuilds} regenerating for watchers"
                 );
                 self.queue_dirty = true;
             }
