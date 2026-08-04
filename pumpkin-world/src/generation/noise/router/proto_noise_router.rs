@@ -145,6 +145,7 @@ impl ProtoNoiseRouters {
 
         // Contiguous memory for our function components
         let mut stack = Vec::<ProtoNoiseFunctionComponent>::with_capacity(base_stack.len());
+        let mut lantern_simplified = 0usize;
 
         for component in base_stack {
             let converted = match component {
@@ -293,6 +294,28 @@ impl ProtoNoiseRouters {
                         .max()
                         .max(stack[*when_out_range_index].max());
 
+                    let in_min = stack[*input_index].min();
+                    let in_max = stack[*input_index].max();
+                    if in_min.is_finite() && in_max.is_finite() {
+                        if in_min >= data.min_inclusive && in_max < data.max_exclusive {
+                            lantern_simplified += 1;
+                            stack.push(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *when_in_range_index,
+                                stack[*when_in_range_index].min(),
+                                stack[*when_in_range_index].max(),
+                            )));
+                            continue;
+                        }
+                        if in_max < data.min_inclusive || in_min >= data.max_exclusive {
+                            lantern_simplified += 1;
+                            stack.push(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *when_out_range_index,
+                                stack[*when_out_range_index].min(),
+                                stack[*when_out_range_index].max(),
+                            )));
+                            continue;
+                        }
+                    }
                     ProtoNoiseFunctionComponent::Dependent(
                         DependentProtoNoiseFunctionComponent::RangeChoice(RangeChoice::new(
                             *input_index,
@@ -340,6 +363,84 @@ impl ProtoNoiseRouters {
                         BinaryOperation::Max => (arg1_min.max(arg2_min), arg1_max.max(arg2_max)),
                     };
 
+                    // lantern: build-time simplification. Bounds are already
+                    // trusted by the runtime skip-shortcuts, so min==max is a
+                    // proven constant. Finite-only: ranges can be ±inf.
+                    let c1 = (arg1_min == arg1_max && arg1_min.is_finite()).then_some(arg1_min);
+                    let c2 = (arg2_min == arg2_max && arg2_min.is_finite()).then_some(arg2_min);
+                    let simplified = match (data.operation, c1, c2) {
+                        (op, Some(a), Some(b)) => {
+                            let v = match op {
+                                BinaryOperation::Add => a + b,
+                                // Mirror the runtime's arg1==0 shortcut exactly.
+                                BinaryOperation::Mul => if a == 0.0 { 0.0 } else { a * b },
+                                BinaryOperation::Min => a.min(b),
+                                BinaryOperation::Max => a.max(b),
+                            };
+                            Some(ProtoNoiseFunctionComponent::Independent(
+                                IndependentProtoNoiseFunctionComponent::Constant(Constant::new(v)),
+                            ))
+                        }
+                        (BinaryOperation::Add, Some(z), _) if z == 0.0 => {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument2_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Add, _, Some(z)) if z == 0.0 => {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument1_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Mul, Some(z), _) if z == 0.0 => {
+                            Some(ProtoNoiseFunctionComponent::Independent(
+                                IndependentProtoNoiseFunctionComponent::Constant(Constant::new(0.0)),
+                            ))
+                        }
+                        (BinaryOperation::Mul, Some(o), _) if o == 1.0 => {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument2_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Mul, _, Some(o)) if o == 1.0 => {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument1_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Min, _, _)
+                            if arg1_max <= arg2_min && arg1_max.is_finite() =>
+                        {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument1_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Min, _, _)
+                            if arg2_max <= arg1_min && arg2_max.is_finite() =>
+                        {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument2_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Max, _, _)
+                            if arg1_min >= arg2_max && arg1_min.is_finite() =>
+                        {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument1_index, min, max,
+                            )))
+                        }
+                        (BinaryOperation::Max, _, _)
+                            if arg2_min >= arg1_max && arg2_min.is_finite() =>
+                        {
+                            Some(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                                *argument2_index, min, max,
+                            )))
+                        }
+                        _ => None,
+                    };
+                    if let Some(simple) = simplified {
+                        lantern_simplified += 1;
+                        stack.push(simple);
+                        continue;
+                    }
                     ProtoNoiseFunctionComponent::Dependent(
                         DependentProtoNoiseFunctionComponent::Binary(Binary::new(
                             *argument1_index,
@@ -405,6 +506,15 @@ impl ProtoNoiseRouters {
                         }
                     };
 
+                    if arg1_min == arg1_max && arg1_min.is_finite() {
+                        lantern_simplified += 1;
+                        stack.push(ProtoNoiseFunctionComponent::Independent(
+                            IndependentProtoNoiseFunctionComponent::Constant(Constant::new(
+                                data.apply_density(arg1_min),
+                            )),
+                        ));
+                        continue;
+                    }
                     ProtoNoiseFunctionComponent::Dependent(
                         DependentProtoNoiseFunctionComponent::Linear(Linear::new(
                             *input_index,
@@ -415,6 +525,26 @@ impl ProtoNoiseRouters {
                     )
                 }
                 BaseNoiseFunctionComponent::Clamp { input_index, data } => {
+                    let in_min = stack[*input_index].min();
+                    let in_max = stack[*input_index].max();
+                    if in_min == in_max && in_min.is_finite() {
+                        lantern_simplified += 1;
+                        stack.push(ProtoNoiseFunctionComponent::Independent(
+                            IndependentProtoNoiseFunctionComponent::Constant(Constant::new(
+                                data.apply_density(in_min),
+                            )),
+                        ));
+                        continue;
+                    }
+                    if in_min >= data.min_value && in_max <= data.max_value && in_min.is_finite() {
+                        lantern_simplified += 1;
+                        stack.push(ProtoNoiseFunctionComponent::PassThrough(PassThrough::new(
+                            *input_index,
+                            in_min,
+                            in_max,
+                        )));
+                        continue;
+                    }
                     ProtoNoiseFunctionComponent::Dependent(
                         DependentProtoNoiseFunctionComponent::Clamp(Clamp::new(*input_index, data)),
                     )
@@ -502,6 +632,12 @@ impl ProtoNoiseRouters {
             };
 
             stack.push(converted);
+        }
+        if lantern_simplified > 0 {
+            tracing::info!(
+                "noise router: {lantern_simplified}/{} nodes simplified at build",
+                base_stack.len()
+            );
         }
 
         stack.into()
