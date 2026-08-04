@@ -77,7 +77,7 @@ pub struct Level {
     pub chunk_saver: Arc<dyn FileIO<Data = SyncChunk>>,
     entity_saver: Arc<dyn FileIO<Data = SyncEntityChunk>>,
 
-    pub world_gen: Arc<WorldGenerator>,
+    pub world_gen: arc_swap::ArcSwapAny<Arc<WorldGenerator>>,
 
     /// Handles runtime lighting updates
     pub light_engine: DynamicLightEngine,
@@ -246,13 +246,13 @@ impl Level {
         }
 
         let seed = Seed(seed as u64);
-        let world_gen: Arc<WorldGenerator> = Arc::from(get_world_gen(
+        let world_gen = arc_swap::ArcSwapAny::new(Arc::from(get_world_gen(
             seed,
             dimension,
             is_flat,
             flat_layers,
             flat_biome,
-        ));
+        )));
 
         let chunk_saver: Arc<dyn FileIO<Data = SyncChunk>> = match &level_config.chunk {
             ChunkConfig::Linear => Arc::new(ChunkFileManager::<LinearV2File<ChunkData>>::new(())),
@@ -627,6 +627,26 @@ impl Level {
 
     pub fn is_chunk_watched(&self, chunk: &Vector2<i32>) -> bool {
         self.chunk_watchers.get(chunk).is_some()
+    }
+
+    /// lantern: swap the world generator live (new seed and/or generator
+    /// kind). Callers are responsible for purging cached/stored chunks so the
+    /// new generator actually produces the terrain players see.
+    pub fn lantern_swap_generator(
+        &self,
+        seed: Seed,
+        is_flat: bool,
+        flat_layers: Vec<crate::generation::generator::FlatLayer>,
+        flat_biome: String,
+    ) {
+        let dimension = self.world_gen.load().dimension().clone();
+        self.world_gen.store(Arc::from(get_world_gen(
+            seed,
+            dimension,
+            is_flat,
+            flat_layers,
+            flat_biome,
+        )));
     }
 
     pub fn clean_memory(self: &Arc<Self>) -> Vec<Vector2<i32>> {
