@@ -64,7 +64,19 @@ impl PlacedFeature {
         if let ConfiguredFeature::SculkPatch(feature) = feature {
             feature.generate_in_proto_chunk(chunk, random, pos)
         } else {
-            tracing::warn!("Placed feature {feature_name:?} is not supported in a jigsaw pool");
+            // Once per feature name — a taiga village otherwise logs one line
+            // per unplaced tree/patch.
+            static WARNED: std::sync::Mutex<Option<std::collections::HashSet<String>>> =
+                std::sync::Mutex::new(None);
+            let mut warned = WARNED.lock().unwrap();
+            if warned
+                .get_or_insert_with(Default::default)
+                .insert(format!("{feature_name:?}"))
+            {
+                tracing::warn!(
+                    "Placed feature {feature_name:?} is not supported in a jigsaw pool (warned once)"
+                );
+            }
             false
         }
     }
