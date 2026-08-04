@@ -673,6 +673,24 @@ impl Level {
         self.world_gen.store(Arc::new(WorldGenerator::Flat(flat)));
     }
 
+    /// lantern: swap in a chunk-streaming generator (nucleation ChunkSource).
+    pub fn lantern_swap_generator_chunks(
+        &self,
+        seed: Seed,
+        chunk_fill: std::sync::Arc<crate::generation::generator::flat::ChunkFillFn>,
+        biome: String,
+    ) {
+        let dimension = self.world_gen.load().dimension().clone();
+        let mut flat = crate::generation::generator::flat::FlatGenerator::new(
+            seed,
+            dimension,
+            Vec::new(),
+            biome,
+        );
+        flat.chunk_fill = Some(chunk_fill);
+        self.world_gen.store(Arc::new(WorldGenerator::Flat(flat)));
+    }
+
     pub fn clean_memory(self: &Arc<Self>) -> Vec<Vector2<i32>> {
         self.chunk_watchers.retain(|_, watcher| *watcher != 0);
 

@@ -10,6 +10,11 @@ use pumpkin_data::dimension::Dimension;
 pub type DensityFn =
     dyn Fn(i32, i32, i32) -> Option<&'static pumpkin_data::BlockState> + Send + Sync;
 
+/// lantern: pluggable per-chunk source — returns (world x, y, z, state id)
+/// for every non-air block of chunk (cx, cz). Backing for nucleation's
+/// ChunkSource streaming (SDF / cellular / OSM footprints).
+pub type ChunkFillFn = dyn Fn(i32, i32) -> Vec<(i32, i32, i32, u16)> + Send + Sync;
+
 pub struct FlatGenerator {
     pub seed: u64,
     pub dimension: Dimension,
@@ -18,6 +23,8 @@ pub struct FlatGenerator {
     /// When set, step_to_noise fills blocks from this instead of the layers —
     /// the SDF world generator rides the whole flat pipeline.
     pub density: Option<std::sync::Arc<DensityFn>>,
+    /// Chunk-granular variant of `density` (takes precedence when both set).
+    pub chunk_fill: Option<std::sync::Arc<ChunkFillFn>>,
 }
 
 impl FlatGenerator {
@@ -34,6 +41,7 @@ impl FlatGenerator {
             layers,
             biome,
             density: None,
+            chunk_fill: None,
         }
     }
 
@@ -48,6 +56,18 @@ impl FlatGenerator {
     pub fn step_to_noise(&self, chunk: &mut ProtoChunk) {
         let start_x = start_block_x(chunk.x);
         let start_z = start_block_z(chunk.z);
+        if let Some(fill) = &self.chunk_fill {
+            use pumpkin_data::BlockState;
+            let bottom = chunk.bottom_y() as i32;
+            let top = bottom + chunk.height() as i32;
+            for (x, y, z, state_id) in fill(chunk.x, chunk.z) {
+                if y >= bottom && y < top {
+                    chunk.set_block_state(x, y, z, BlockState::from_id(pumpkin_data::BlockStateId::new_or_air(state_id)));
+                }
+            }
+            chunk.stage = StagedChunkEnum::Noise;
+            return;
+        }
         if let Some(density) = &self.density {
             let bottom = chunk.bottom_y() as i32;
             let top = bottom + chunk.height() as i32;
