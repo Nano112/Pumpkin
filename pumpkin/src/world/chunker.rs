@@ -12,12 +12,21 @@ use crate::{
     net::ClientPlatform,
 };
 
+/// lantern: live server view-distance override (0 = use config).
+pub static LANTERN_VIEW_DISTANCE: std::sync::atomic::AtomicU8 =
+    std::sync::atomic::AtomicU8::new(0);
+
 pub fn get_view_distance(player: &Player) -> NonZeroU8 {
     let server = player.world().server.upgrade().unwrap();
-    let max_view_distance = match player.client.as_ref() {
+    let mut max_view_distance = match player.client.as_ref() {
         ClientPlatform::Java(_) => server.advanced_config.networking.java.view_distance,
         ClientPlatform::Bedrock(_) => server.advanced_config.networking.bedrock.view_distance,
     };
+    if let Some(overridden) =
+        NonZeroU8::new(LANTERN_VIEW_DISTANCE.load(std::sync::atomic::Ordering::Relaxed))
+    {
+        max_view_distance = overridden;
+    }
     player
         .config
         .load()
