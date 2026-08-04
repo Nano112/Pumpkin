@@ -1040,6 +1040,50 @@ impl GenerationSchedule {
                 self.garbage_collect_dependencies();
                 self.process_unload_queue();
             }
+            if level.lantern_drop_all_chunks.swap(false, Relaxed) {
+                // World reset: wipe every idle chunk's progress and replay
+                // task creation (None -> old target) through resort_work, so
+                // chunks players still watch regenerate immediately. Levels
+                // themselves didn't change, so merely dropping holders would
+                // leave re-requests without tasks — hanging their listeners.
+                let mut changes: HashMapType<ChunkPos, (StagedChunkEnum, StagedChunkEnum)> =
+                    HashMapType::default();
+                let mut junk: Vec<ChunkPos> = Vec::new();
+                let mut reset_count = 0usize;
+                for (pos, holder) in self.chunk_map.iter_mut() {
+                    if !holder.occupied.is_null()
+                        || holder.dependency_stage != StagedChunkEnum::None
+                        || holder.tasks.iter().any(|t| !t.is_null())
+                    {
+                        continue; // active in the pipeline — leave untouched
+                    }
+                    if holder.public {
+                        self.public_chunk_map.remove(pos);
+                        holder.public = false;
+                    }
+                    holder.chunk = None;
+                    holder.current_stage = StagedChunkEnum::None;
+                    reset_count += 1;
+                    if holder.target_stage == StagedChunkEnum::None {
+                        junk.push(*pos);
+                    } else {
+                        changes.insert(*pos, (StagedChunkEnum::None, holder.target_stage));
+                        holder.target_stage = StagedChunkEnum::None;
+                    }
+                }
+                for pos in &junk {
+                    self.chunk_map.remove(pos);
+                    self.unload_chunks.remove(pos);
+                }
+                let rebuilds = changes.len();
+                if rebuilds > 0 {
+                    self.resort_work((Some((changes, self.last_level.clone())), None));
+                }
+                info!(
+                    "lantern: world reset — {reset_count} chunks wiped, {rebuilds} regenerating for watchers"
+                );
+                self.queue_dirty = true;
+            }
             if level.should_save.swap(false, Relaxed) {
                 self.save_all_chunk(false);
             }

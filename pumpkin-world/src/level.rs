@@ -91,6 +91,11 @@ pub struct Level {
     pub shut_down_chunk_system: AtomicBool,
     pub should_save: AtomicBool,
     pub should_unload: AtomicBool,
+    /// lantern: ask the generation scheduler to forget every idle chunk it has
+    /// completed — set together with a generator swap so re-requested chunks
+    /// regenerate instead of being considered already done (which would hang
+    /// their listeners forever).
+    pub lantern_drop_all_chunks: AtomicBool,
     /// Whether periodic autosaving is enabled. Toggled by `/save-off` and `/save-on`;
     /// a manual `/save-all` still saves while this is `false`.
     pub save_enabled: AtomicBool,
@@ -297,6 +302,7 @@ impl Level {
             shut_down_chunk_system: AtomicBool::new(false),
             should_save: AtomicBool::new(false),
             should_unload: AtomicBool::new(false),
+            lantern_drop_all_chunks: AtomicBool::new(false),
             save_enabled: AtomicBool::new(true),
             autosave_ticks: level_config.autosave_ticks,
             pending_entity_generations,
