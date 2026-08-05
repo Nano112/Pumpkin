@@ -40,6 +40,13 @@ use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
+/// lantern: when set and returning true for a position, a player's
+/// use-block interaction is owned by an external logic engine (mc-tick) —
+/// vanilla handling is skipped and the engine's block updates follow.
+pub static LANTERN_USE_BLOCK_HOOK: std::sync::OnceLock<
+    Box<dyn Fn(pumpkin_util::math::position::BlockPos) -> bool + Send + Sync>,
+> = std::sync::OnceLock::new();
+
 pub mod block;
 pub mod command;
 pub mod crash;

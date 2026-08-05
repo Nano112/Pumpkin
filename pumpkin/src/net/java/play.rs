@@ -2247,6 +2247,20 @@ impl JavaClient {
         let world = entity.world.load_full();
         let block = world.get_block(&position);
 
+        // lantern: an external logic engine may own this block's interactions.
+        if let Some(hook) = crate::LANTERN_USE_BLOCK_HOOK.get()
+            && hook(position)
+        {
+            // Undo the client's optimistic prediction; the engine's update
+            // arrives on its next tick.
+            self.enqueue_packet(&CBlockUpdate::new(
+                position,
+                VarInt(i32::from(block.default_state.id.as_u16())),
+            ))
+            .await;
+            return Ok(());
+        }
+
         let event = PlayerInteractEvent::new(
             player,
             InteractAction::RightClickBlock,
