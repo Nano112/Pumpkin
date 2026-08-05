@@ -1186,6 +1186,12 @@ impl World {
         for scheduled_tick in tick_data.block_ticks {
             let world = self.clone();
             let pos = scheduled_tick.position; // Clone for the move closure
+            // lantern: an external engine may own this block's logic.
+            if let Some(owned) = crate::LANTERN_REGION_OWNED_HOOK.get()
+                && owned(pos)
+            {
+                continue;
+            }
             chunk_tasks.spawn(async move {
                 let block = world.get_block(&pos);
                 if let Some(pumpkin_block) = world.block_registry.get_pumpkin_block(block.id) {
@@ -4863,6 +4869,11 @@ impl World {
             }
 
             let neighbor_pos = block_pos.offset(direction.to_offset());
+            if let Some(owned) = crate::LANTERN_REGION_OWNED_HOOK.get()
+                && owned(neighbor_pos)
+            {
+                continue;
+            }
             let (neighbor_block, neighbor_fluid) = self.get_block_and_fluid(&neighbor_pos);
 
             if let Some(neighbor_pumpkin_block) =
@@ -4894,6 +4905,11 @@ impl World {
         neighbor_block_pos: &BlockPos,
         source_block: &Block,
     ) {
+        if let Some(owned) = crate::LANTERN_REGION_OWNED_HOOK.get()
+            && owned(*neighbor_block_pos)
+        {
+            return;
+        }
         let neighbor_block = self.get_block(neighbor_block_pos);
 
         if let Some(neighbor_pumpkin_block) =

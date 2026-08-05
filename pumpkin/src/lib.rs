@@ -53,6 +53,12 @@ pub static LANTERN_BLOCK_CHANGED_HOOK: std::sync::OnceLock<
     Box<dyn Fn(pumpkin_util::math::position::BlockPos, u16) + Send + Sync>,
 > = std::sync::OnceLock::new();
 
+/// lantern: when set and claiming a position, the external engine owns that
+/// block's logic — Pumpkin's scheduled ticks and neighbor updates skip it.
+pub static LANTERN_REGION_OWNED_HOOK: std::sync::OnceLock<
+    Box<dyn Fn(pumpkin_util::math::position::BlockPos) -> bool + Send + Sync>,
+> = std::sync::OnceLock::new();
+
 pub mod block;
 pub mod command;
 pub mod crash;
