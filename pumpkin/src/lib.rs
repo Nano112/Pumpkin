@@ -47,6 +47,12 @@ pub static LANTERN_USE_BLOCK_HOOK: std::sync::OnceLock<
     Box<dyn Fn(pumpkin_util::math::position::BlockPos) -> bool + Send + Sync>,
 > = std::sync::OnceLock::new();
 
+/// lantern: observes every world-path block change (player placements,
+/// breaks, pumpkin mechanics) so an external engine can stay in sync.
+pub static LANTERN_BLOCK_CHANGED_HOOK: std::sync::OnceLock<
+    Box<dyn Fn(pumpkin_util::math::position::BlockPos, u16) + Send + Sync>,
+> = std::sync::OnceLock::new();
+
 pub mod block;
 pub mod command;
 pub mod crash;

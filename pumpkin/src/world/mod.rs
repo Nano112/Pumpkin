@@ -4257,6 +4257,11 @@ impl World {
         block_state_id: BlockStateId,
         flags: BlockFlags,
     ) -> BlockStateId {
+        // lantern: mirror world-path block changes into an external logic
+        // engine (sim writes go through Level directly, so they don't echo).
+        if let Some(hook) = crate::LANTERN_BLOCK_CHANGED_HOOK.get() {
+            hook(*position, block_state_id.as_u16());
+        }
         let (chunk_coordinate, relative) = position.chunk_and_chunk_relative_position();
         let replaced_block_state_id = self
             .level
